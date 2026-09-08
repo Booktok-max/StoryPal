@@ -16,11 +16,14 @@ import { StoryCreatorModal } from "./components/StoryCreatorModal";
 import { OfflineBanner } from "./components/OfflineBanner";
 import { PhonicsWordInfo } from "./utils/phonics";
 import { BookDiscoveryModal } from "./components/BookDiscoveryModal";
+import { useApiHealth } from "./hooks/useApiHealth";
 
 const STORAGE_KEY_PROGRESS = "storypals_user_progress_v1";
 const STORAGE_KEY_BOOKS = "storypals_custom_books_v1";
 
 export default function App() {
+  // Check API health on startup to know if AI features are available
+  const { aiAvailable } = useApiHealth();
   // Books are now loaded through the StoryPals catalog API.
   // Custom AI-created books remain local for Phase 1 and will move into the catalog later.
   const [books, setBooks] = useState<Book[]>(INITIAL_BOOKS);
@@ -340,6 +343,19 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-[#fdfbf7] text-stone-800">
       {/* Offline Status Bar */}
       <OfflineBanner />
+
+      {/* AI Features Unavailable Banner */}
+      {aiAvailable === false && (
+        <aside className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-2.5 text-xs shadow-sm flex items-center justify-center gap-3 z-50">
+          <span className="font-extrabold tracking-wide">✨ AI Features Offline</span>
+          <span className="text-indigo-100 font-medium">
+            Voice narration, illustrations, reading buddy & story creation require a Gemini API key.
+          </span>
+          <span className="text-indigo-200 text-[11px]">
+            Set GEMINI_API_KEY in .env.local and restart the server.
+          </span>
+        </aside>
+      )}
 
       {/* Top Navigation */}
       <Navbar

@@ -68,7 +68,7 @@ async function startServer() {
         scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"], // Tailwind needs inline
         imgSrc: ["'self'", "data:", "https://covers.openlibrary.org"],
-        connectSrc: ["'self'", "https://openlibrary.org"],
+        connectSrc: ["'self'", "https://openlibrary.org", "https://generativelanguage.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
       },
     } : false,
