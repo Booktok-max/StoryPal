@@ -3,6 +3,9 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=20 <=24"
+  },
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
@@ -10,10 +13,12 @@
     "clean": "rimraf dist server.js",
     "lint": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "setup": "npm install && npm rebuild lightningcss-win32-x64-msvc 2>/dev/null; echo 'Done! Copy .env.local.example to .env.local and set GEMINI_API_KEY.'
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
+    "@tailwindcss/oxide": "^4.3.3",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "canvas-confetti": "^1.9.4",
@@ -21,6 +26,7 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
+    "gaxios": "^8.0.0",
     "helmet": "^8.0.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
