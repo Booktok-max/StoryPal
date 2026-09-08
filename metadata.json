@@ -1,0 +1,6 @@
+{
+  "name": "StoryPals - Kids Read-Aloud & AI Illustrated Books",
+  "description": "Children's read-aloud storybook app pre-seeded with Aesop's fables and classic tales, featuring voice narration, custom illustrations, reading buddy chat, and gamified progress tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #fdfbf7;
+    color: #292524;
+  }
+}
+
+.font-display {
+  font-family: 'Fredoka', 'Quicksand', cursive, sans-serif;
+}
+
+@keyframes radialProgressGlow {
+  0%, 100% {
+    filter: drop-shadow(0 0 2px rgba(245, 158, 11, 0.2));
+  }
+  50% {
+    filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.5));
+  }
+}
+
+.radial-progress-glow {
+  animation: radialProgressGlow 3s ease-in-out infinite;
+}
