@@ -20,7 +20,7 @@ RUN npm install --frozen-lockfile --omit=dev 2>/dev/null || npm install --omit=d
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/data ./data
-COPY --from=builder /app/public .//public
+COPY --from=builder /app/public ./public
 COPY --from=builder /app/server ./server
 COPY --from=builder /app/src/types.ts ./src/types.ts
 

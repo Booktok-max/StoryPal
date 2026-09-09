@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "engines": {
-    "node": ">=20 <=24"
+    "node": ">=20.0.0"
   },
   "scripts": {
     "dev": "tsx server.ts",
@@ -14,7 +14,7 @@
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "setup": "npm install && npm rebuild lightningcss-win32-x64-msvc 2>/dev/null; echo 'Done! Copy .env.local.example to .env.local and set GEMINI_API_KEY.'
+    "setup": "npm install && npm rebuild lightningcss-win32-x64-msvc; echo Done! Copy .env.local.example to .env.local and set GEMINI_API_KEY."
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
