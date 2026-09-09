@@ -111,7 +111,7 @@ export const BookDiscoveryModal: React.FC<BookDiscoveryModalProps> = ({
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Try "fairy tales", "animals", "friendship"…"
+                placeholder={'Try "fairy tales", "animals", "friendship"…'}
                 className="w-full rounded-2xl border border-stone-200 bg-white py-3 pl-11 pr-4 text-sm outline-none focus:ring-2 focus:ring-amber-300"
                 autoFocus
               />
