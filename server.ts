@@ -12,9 +12,14 @@ import { importTextBook } from "./server/books/importer";
 dotenv.config();
 
 // ── Environment ────────────────────────────────────────────────────────────────
+// Auto-detect production: if PORT is set by the platform (Railway, Heroku, etc.)
+// and NODE_ENV isn't explicitly set, assume production.
+const isPlatformHosted = !!process.env.PORT && !process.env.NODE_ENV;
 const PORT = Number(process.env.PORT) || 3000;
-const NODE_ENV = process.env.NODE_ENV || "development";
+const NODE_ENV = process.env.NODE_ENV || (isPlatformHosted ? "production" : "development");
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "").split(",").filter(Boolean);
+
+console.log(`[StoryPals] NODE_ENV=${NODE_ENV} PORT=${PORT} isPlatformHosted=${isPlatformHosted}`);
 
 // ── Input validation helpers ──────────────────────────────────────────────────
 const MAX_TTS_TEXT_LENGTH = 2000;
@@ -540,12 +545,23 @@ Return ONLY a valid JSON object matching this structure:
   });
 
   // Mount Vite middleware for development or static serving for production
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
+  if (NODE_ENV === "development") {
+    try {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } catch (err: any) {
+      // Vite failed to start (e.g., missing lightningcss binary on deploy).
+      // Fall back to serving static files from dist/ if available.
+      console.warn("Vite dev server failed to start, falling back to static serving:", err?.message);
+      const distPath = path.join(process.cwd(), "dist");
+      app.use(express.static(distPath));
+      app.get("*", (_req: Request, res: Response) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    }
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
@@ -556,6 +572,7 @@ Return ONLY a valid JSON object matching this structure:
 
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`StoryPals server running on http://0.0.0.0:${PORT} (${NODE_ENV})`);
+    console.log(`[StoryPals] GEMINI_API_KEY present: ${!!process.env.GEMINI_API_KEY}`);
     if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
       console.warn("⚠️  GEMINI_API_KEY is not set. AI features (TTS, illustrations, chat, story creation) will be disabled.");
     }
