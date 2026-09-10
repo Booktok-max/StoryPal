@@ -13,8 +13,6 @@ import { isDbHealthy } from "./db/client.js";
 dotenv.config();
 
 // ── Environment ────────────────────────────────────────────────────────────────
-// Auto-detect production: if PORT is set by the platform (Railway, Heroku, etc.)
-// and NODE_ENV isn't explicitly set, assume production.
 const isPlatformHosted = !!process.env.PORT && !process.env.NODE_ENV;
 const PORT = Number(process.env.PORT) || 3000;
 const NODE_ENV = process.env.NODE_ENV || (isPlatformHosted ? "production" : "development");
@@ -30,7 +28,6 @@ const MAX_STORY_PROMPT_LENGTH = 500;
 
 function sanitizeString(input: unknown, maxLen: number): string {
   if (typeof input !== "string") return "";
-  // Strip HTML tags and trim
   return input.replace(/<[^>]*>/g, "").trim().slice(0, maxLen);
 }
 
@@ -72,23 +69,21 @@ async function startServer() {
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"], // Tailwind needs inline
+        styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", "data:", "https://covers.openlibrary.org"],
         connectSrc: ["'self'", "https://openlibrary.org", "https://generativelanguage.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
       },
     } : false,
-    crossOriginEmbedderPolicy: false, // needed for Open Library covers
+    crossOriginEmbedderPolicy: false,
   }));
 
   if (ALLOWED_ORIGINS.length > 0) {
     app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
   } else if (NODE_ENV !== "production") {
-    app.use(cors({ origin: true, credentials: true })); // dev: allow all
+    app.use(cors({ origin: true, credentials: true }));
   }
-  // In production with no ALLOWED_ORIGINS, CORS is off (same-origin only).
 
-  // Global rate limiter: 100 requests per minute per IP
   app.use(rateLimit({
     windowMs: 60 * 1000,
     max: 100,
@@ -97,7 +92,6 @@ async function startServer() {
     message: { error: "Too many requests. Please slow down." },
   }));
 
-  // AI-heavy endpoint rate limiters
   const aiRateLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 15,
@@ -116,7 +110,7 @@ async function startServer() {
 
   app.use(express.json({ limit: "1mb" }));
 
-  // Health check endpoint with depth
+  // ── Health check ─────────────────────────────────────────────────────────────
   app.get("/api/health", async (_req: Request, res: Response) => {
     const hasKey = !!process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY";
     const uptime = process.uptime();
@@ -136,7 +130,7 @@ async function startServer() {
     });
   });
 
-  // Book catalog API. The frontend talks only to StoryPals; providers stay server-side.
+  // ── Book catalog API ──────────────────────────────────────────────────────────
   app.get("/api/providers", (_req: Request, res: Response) => {
     res.json({ providers: bookRepository.getProviders() });
   });
@@ -180,8 +174,7 @@ async function startServer() {
     }
   });
 
-  // Phase 3: controlled import endpoint. Keep this disabled in production until
-  // authentication/authorization is wired to the parent/admin account system.
+  // Phase 3: controlled import endpoint.
   app.post("/api/books/import", async (req: Request, res: Response): Promise<any> => {
     try {
       if (process.env.BOOK_IMPORT_ENABLED !== "true") {
@@ -217,10 +210,48 @@ async function startServer() {
     }
   });
 
+  // Parental reading-level override. Persists for public-domain books
+  // (stored in data/public-domain-books.json). For Open Library / Standard
+  // Ebooks discovery results the update is applied client-side only and
+  // survives until the next full page reload.
+  app.patch("/api/books/:id/level", async (req: Request, res: Response): Promise<any> => {
+    try {
+      const { levelShort, level } = req.body;
+
+      const validLevelShorts = ["Level 1", "Level 2", "Level 3"];
+      const validLevels = [
+        "Level 1 (Early Reader)",
+        "Level 2 (Developing)",
+        "Level 3 (Confident)",
+      ];
+
+      if (!validLevelShorts.includes(levelShort)) {
+        return res.status(400).json({ error: "levelShort must be Level 1, Level 2, or Level 3." });
+      }
+      if (!validLevels.includes(level)) {
+        return res.status(400).json({ error: "level value is invalid." });
+      }
+
+      const updatedBook = await bookRepository.updateBookLevel(
+        req.params.id,
+        levelShort,
+        level
+      );
+
+      // For non-writable providers (openlibrary, standardebooks) updatedBook
+      // is null — the client already applied the change in state, so this is
+      // still a success from the client's perspective.
+      return res.json({ persisted: !!updatedBook, book: updatedBook ?? null });
+    } catch (err: any) {
+      console.error("Level override error:", err);
+      return res.status(500).json({ error: err?.message || "Failed to save level override." });
+    }
+  });
+
   // Persist a generated illustration for one page so it survives a server
   // restart. Only writable providers (currently: public-domain) actually
-  // save anything — for other sources this just confirms the image is
-  // fine to keep client-side-only and reports that nothing was persisted.
+  // save anything — for other sources this confirms the image is fine to
+  // keep client-side-only and reports that nothing was persisted.
   app.patch("/api/books/:id/illustration", async (req: Request, res: Response): Promise<any> => {
     try {
       const { pageIndex, imageUrl, imageSize } = req.body;
@@ -235,9 +266,6 @@ async function startServer() {
       if (typeof imageSize !== "string" || !validSizes.includes(imageSize)) {
         return res.status(400).json({ error: "imageSize must be one of 1K, 2K, 4K." });
       }
-      // Illustrations are returned as data URLs; cap to the same 4K-ish
-      // ceiling generate-illustration itself tolerates so this endpoint
-      // can't be used to smuggle arbitrarily large payloads to disk.
       if (imageUrl.length > 15_000_000) {
         return res.status(413).json({ error: "imageUrl payload is too large." });
       }
@@ -259,7 +287,7 @@ async function startServer() {
     }
   });
 
-  // 1. Text to Speech endpoint using gemini-3.1-flash-tts-preview
+  // ── 1. Text to Speech ─────────────────────────────────────────────────────────
   app.post("/api/tts", aiRateLimiter, async (req: Request, res: Response): Promise<any> => {
     try {
       const rawText = typeof req.body.text === "string" ? req.body.text : "";
@@ -277,13 +305,11 @@ async function startServer() {
         });
       }
 
-      // Voice options for kids: Puck, Kore, Zephyr, Fenrir, Charon
       const validVoices = ["Puck", "Kore", "Zephyr", "Fenrir", "Charon"];
       const chosenVoice = validVoices.includes(voice) ? voice : "Puck";
 
       const promptText = `Please read this children's story text aloud in a cheerful, warm, expressive tone suitable for young readers:\n"${text}"`;
 
-      // 30s timeout for TTS generation
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 30_000);
 
@@ -326,7 +352,7 @@ async function startServer() {
     }
   });
 
-  // 2. High-quality Image Generation endpoint using gemini-3-pro-image-preview
+  // ── 2. Image Generation ───────────────────────────────────────────────────────
   app.post("/api/generate-illustration", imageRateLimiter, async (req: Request, res: Response): Promise<any> => {
     try {
       const rawPrompt = typeof req.body.prompt === "string" ? req.body.prompt : "";
@@ -336,7 +362,7 @@ async function startServer() {
       }
 
       const {
-        imageSize = "1K", // "1K", "2K", "4K"
+        imageSize = "1K",
         aspectRatio = "4:3",
         style = "Whimsical Storybook Watercolor",
         pageNumber = 1,
@@ -356,21 +382,15 @@ async function startServer() {
       const allowedRatios = ["1:1", "3:4", "4:3", "16:9"];
       const validatedRatio = allowedRatios.includes(aspectRatio) ? aspectRatio : "4:3";
 
-      // Enhanced prompt optimized for rich young reader illustrations
       const richPrompt = `High quality children's picture book illustration for the book "${bookTitle}", page ${pageNumber}. Art style: ${style}. Clean composition, vibrant cheerful colors, expressive characters, soft lighting, child-friendly atmosphere, magical detail: ${prompt}`;
 
-      // 60s timeout for image generation (can be slow for 4K)
       const imgController = new AbortController();
       const imgTimeout = setTimeout(() => imgController.abort(), 60_000);
 
       const response = await ai.models.generateContent({
         model: "gemini-3-pro-image-preview",
         contents: {
-          parts: [
-            {
-              text: richPrompt,
-            },
-          ],
+          parts: [{ text: richPrompt }],
         },
         config: {
           imageConfig: {
@@ -405,7 +425,7 @@ async function startServer() {
     }
   });
 
-  // 3. Multi-turn Chatbot endpoint with role-based routing
+  // ── 3. Reading Buddy Chat ─────────────────────────────────────────────────────
   app.post("/api/chat", aiRateLimiter, async (req: Request, res: Response): Promise<any> => {
     try {
       const { validation, messages: validMessages } = (() => {
@@ -425,12 +445,9 @@ async function startServer() {
 
       const ai = getGeminiClient();
       if (!ai) {
-        return res.status(503).json({
-          error: "Gemini API key is not configured.",
-        });
+        return res.status(503).json({ error: "Gemini API key is not configured." });
       }
 
-      // Determine model based on task complexity
       let selectedModel = "gemini-3.5-flash";
       if (taskType === "complex") {
         selectedModel = "gemini-3.1-pro-preview";
@@ -461,42 +478,32 @@ Your core directives:
 5. If asked a creative question (e.g., "what happens next?"), imagine a delightful, whimsical continuation!
 6. Always end with a warm encouraging remark or a fun question back to the child.${contextInfo}`;
 
-      // Convert conversation messages to Gemini format
       const contents = validMessages.map((m) => ({
         role: m.role === "assistant" || m.role === "model" ? "model" : "user",
         parts: [{ text: m.content }],
       }));
 
-      // 30s timeout for chat response
       const chatController = new AbortController();
       const chatTimeout = setTimeout(() => chatController.abort(), 30_000);
 
       const response = await ai.models.generateContent({
         model: selectedModel,
         contents,
-        config: {
-          systemInstruction,
-        },
+        config: { systemInstruction },
       });
 
       clearTimeout(chatTimeout);
 
       const replyText = response.text || "That's a wonderful question! Let's keep exploring the story together!";
 
-      return res.json({
-        reply: replyText,
-        modelUsed: selectedModel,
-        taskType,
-      });
+      return res.json({ reply: replyText, modelUsed: selectedModel, taskType });
     } catch (err: any) {
       console.error("Chat error:", err);
-      return res.status(500).json({
-        error: err?.message || "Failed to get chatbot response.",
-      });
+      return res.status(500).json({ error: err?.message || "Failed to get chatbot response." });
     }
   });
 
-  // 4. Custom story generation endpoint for personalized children's books
+  // ── 4. Custom Story Generation ────────────────────────────────────────────────
   app.post("/api/create-story", aiRateLimiter, async (req: Request, res: Response): Promise<any> => {
     try {
       const childName = sanitizeString(req.body.childName || "Alex", 50);
@@ -506,9 +513,7 @@ Your core directives:
 
       const ai = getGeminiClient();
       if (!ai) {
-        return res.status(503).json({
-          error: "Gemini API key is not configured.",
-        });
+        return res.status(503).json({ error: "Gemini API key is not configured." });
       }
 
       const wordCountGuideline =
@@ -557,16 +562,13 @@ Return ONLY a valid JSON object matching this structure:
   ]
 }`;
 
-      // 30s timeout for story creation
       const storyController = new AbortController();
       const storyTimeout = setTimeout(() => storyController.abort(), 30_000);
 
       const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
         contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-        },
+        config: { responseMimeType: "application/json" },
       });
 
       clearTimeout(storyTimeout);
@@ -583,13 +585,11 @@ Return ONLY a valid JSON object matching this structure:
       return res.json({ story: storyData });
     } catch (err: any) {
       console.error("Story creation error:", err);
-      return res.status(500).json({
-        error: err?.message || "Failed to create custom story.",
-      });
+      return res.status(500).json({ error: err?.message || "Failed to create custom story." });
     }
   });
 
-  // Mount Vite middleware for development or static serving for production
+  // ── Static / Vite ─────────────────────────────────────────────────────────────
   if (NODE_ENV === "development") {
     try {
       const vite = await createViteServer({
@@ -598,8 +598,6 @@ Return ONLY a valid JSON object matching this structure:
       });
       app.use(vite.middlewares);
     } catch (err: any) {
-      // Vite failed to start (e.g., missing lightningcss binary on deploy).
-      // Fall back to serving static files from dist/ if available.
       console.warn("Vite dev server failed to start, falling back to static serving:", err?.message);
       const distPath = path.join(process.cwd(), "dist");
       app.use(express.static(distPath));
@@ -623,7 +621,7 @@ Return ONLY a valid JSON object matching this structure:
     }
   });
 
-  // ── Graceful shutdown ────────────────────────────────────────────────────────
+  // ── Graceful shutdown ─────────────────────────────────────────────────────────
   const shutdown = (signal: string) => {
     console.log(`\n${signal} received — shutting down gracefully…`);
     server.close(async () => {
@@ -633,7 +631,6 @@ Return ONLY a valid JSON object matching this structure:
       console.log("Database connection closed.");
       process.exit(0);
     });
-    // Force exit after 10s if connections don't drain
     setTimeout(() => {
       console.warn("Forcing exit — connections did not drain in time.");
       process.exit(1);
