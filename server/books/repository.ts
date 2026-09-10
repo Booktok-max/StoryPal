@@ -30,6 +30,26 @@ export class BookRepository {
     return null;
   }
 
+  /**
+   * Persist a generated illustration back to whichever provider owns this
+   * book. Returns the updated book, or null if no provider both has the
+   * book and supports writing (e.g. Open Library results, which are
+   * metadata-only and can't be persisted).
+   */
+  async updatePageImage(
+    id: string,
+    pageIndex: number,
+    imageUrl: string,
+    imageSize: string
+  ): Promise<Book | null> {
+    for (const provider of this.providers) {
+      if (!provider.updatePageImage) continue;
+      const updated = await provider.updatePageImage(id, pageIndex, imageUrl, imageSize);
+      if (updated) return updated;
+    }
+    return null;
+  }
+
   getProviders() {
     return this.providers.map(({ id, name, type, capabilities }) => ({ id, name, type, capabilities }));
   }
