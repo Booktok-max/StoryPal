@@ -23,6 +23,8 @@ COPY --from=builder /app/data ./data
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/server ./server
 COPY --from=builder /app/src/types.ts ./src/types.ts
+COPY --from=builder /app/db ./db
+COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
 
 USER storypals
 

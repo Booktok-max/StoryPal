@@ -8,6 +8,7 @@ import rateLimit from "express-rate-limit";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { bookRepository } from "./server/books";
 import { importTextBook } from "./server/books/importer";
+import { isDbHealthy } from "./db/client.js";
 
 dotenv.config();
 
@@ -116,13 +117,15 @@ async function startServer() {
   app.use(express.json({ limit: "1mb" }));
 
   // Health check endpoint with depth
-  app.get("/api/health", (_req: Request, res: Response) => {
+  app.get("/api/health", async (_req: Request, res: Response) => {
     const hasKey = !!process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== "MY_GEMINI_API_KEY";
     const uptime = process.uptime();
     const mem = process.memoryUsage();
+    const dbHealthy = await isDbHealthy().catch(() => false);
     res.json({
       status: "ok",
       hasApiKey: hasKey,
+      db: dbHealthy ? "connected" : (process.env.DATABASE_URL ? "error" : "not_configured"),
       env: NODE_ENV,
       uptime: `${Math.floor(uptime / 60)}m ${Math.floor(uptime % 60)}s`,
       memory: {
@@ -581,8 +584,11 @@ Return ONLY a valid JSON object matching this structure:
   // ── Graceful shutdown ────────────────────────────────────────────────────────
   const shutdown = (signal: string) => {
     console.log(`\n${signal} received — shutting down gracefully…`);
-    server.close(() => {
+    server.close(async () => {
       console.log("HTTP server closed.");
+      const { closeDb } = await import("./db/client.js");
+      await closeDb();
+      console.log("Database connection closed.");
       process.exit(0);
     });
     // Force exit after 10s if connections don't drain

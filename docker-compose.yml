@@ -1,17 +1,40 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: storypals
+      POSTGRES_USER: storypals
+      POSTGRES_PASSWORD: storypals_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - storypals-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U storypals"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   storypals:
     build: .
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
+      - DATABASE_URL=postgresql://storypals:storypals_dev@db:5432/storypals
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
       - BOOK_IMPORT_ENABLED=false
       - BOOK_IMPORT_ADMIN_KEY=
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-q", "-O-", "http://localhost:3000/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
+
+volumes:
+  storypals-pgdata:
