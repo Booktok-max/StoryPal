@@ -27,6 +27,7 @@ import { playGeminiAudio, playBrowserSpeech, stopCurrentAudio } from "../utils/a
 import { getWordDetails, PhonicsWordInfo } from "../utils/phonics";
 import { SafeStoryImage } from "./SafeStoryImage";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
+import { useAutoIllustrate } from "../hooks/useAutoIllustrate";
 
 interface StoryReaderProps {
   book: Book;
@@ -58,6 +59,10 @@ export const StoryReader: React.FC<StoryReaderProps> = ({
 
   // Offline / Network connectivity state
   const { isOnline } = useOnlineStatus();
+
+  // Quietly fill in AI illustrations for any imported-book pages that don't
+  // have art yet, without blocking reading (Phase 4 item 2).
+  useAutoIllustrate({ book, isOnline, onIllustrationGenerated });
 
   // Audio / Narration state
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
