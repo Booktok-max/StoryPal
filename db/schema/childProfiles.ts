@@ -27,10 +27,10 @@ export const childSettings = pgTable("child_settings", {
   childId: uuid("child_id").primaryKey().references(() => childProfiles.id, { onDelete: "cascade" }),
   fontSize: fontSizeEnum("font_size").default("normal"),
   fontFamily: fontFamilyEnum("font_family").default("quicksand"),
-  showSyllables: text("show_syllables").$type<boolean>().default("true"),
+  showSyllables: text("show_syllables").$type<boolean>().default(true),
   voice: voiceEnum("voice").default("Puck"),
-  autoplayNarration: text("autoplay_narration").$type<boolean>().default("false"),
-  soundEnabled: text("sound_enabled").$type<boolean>().default("true"),
+  autoplayNarration: text("autoplay_narration").$type<boolean>().default(false),
+  soundEnabled: text("sound_enabled").$type<boolean>().default(true),
   theme: themeEnum("theme").default("light"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
