@@ -136,6 +136,8 @@ function toBook(doc: OpenLibraryDoc): Book | null {
       providerId: "openlibrary",
       externalId,
       sourceUrl: `https://openlibrary.org/${workId}`,
+      hasFullText: doc.has_fulltext === true,
+      ebookAccess: doc.ebook_access,
     },
     rights: {
       attributionRequired: true,
