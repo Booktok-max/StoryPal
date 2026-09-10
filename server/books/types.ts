@@ -32,4 +32,17 @@ export interface BookProvider {
   capabilities: BookProviderCapabilities;
   search(query: BookSearchQuery): Promise<BookSearchResult[]>;
   getBook(externalId: string): Promise<Book | null>;
+  /**
+   * Persist a generated illustration for one page back to this provider's
+   * storage. Optional — only providers that own writable storage (e.g. the
+   * public-domain JSON catalog) implement this. Providers that don't should
+   * omit the method entirely so the repository knows to skip them.
+   * Returns the updated book, or null if this provider doesn't have the book.
+   */
+  updatePageImage?(
+    id: string,
+    pageIndex: number,
+    imageUrl: string,
+    imageSize: string
+  ): Promise<Book | null>;
 }
