@@ -11,9 +11,15 @@ import {
   SlidersHorizontal,
   Bookmark,
   Scroll,
+  GraduationCap,
 } from "lucide-react";
 import { Book, UserProgress } from "../types";
 import { SafeStoryImage } from "./SafeStoryImage";
+import { LevelOverrideModal } from "./LevelOverrideModal";
+
+const IMPORTED_SOURCES = new Set(["public-domain", "openlibrary", "standardebooks"]);
+const isImported = (book: Book) =>
+  book.source?.type ? IMPORTED_SOURCES.has(book.source.type) : false;
 
 interface BookShelfProps {
   books: Book[];
@@ -22,6 +28,7 @@ interface BookShelfProps {
   onOpenCreateStory: () => void;
   onOpenPassport: () => void;
   onOpenBookDiscovery: () => void;
+  onLevelOverride: (bookId: string, level: Book["levelShort"]) => Promise<void>;
 }
 
 export const BookShelf: React.FC<BookShelfProps> = ({
@@ -31,8 +38,10 @@ export const BookShelf: React.FC<BookShelfProps> = ({
   onOpenCreateStory,
   onOpenPassport,
   onOpenBookDiscovery,
+  onLevelOverride,
 }) => {
   const [filter, setFilter] = useState<string>("all");
+  const [overrideBook, setOverrideBook] = useState<Book | null>(null);
 
   const filteredBooks = books.filter((b) => {
     if (filter === "all") return true;
@@ -44,11 +53,13 @@ export const BookShelf: React.FC<BookShelfProps> = ({
     return true;
   });
 
-  const fablesCount = books.filter((b) => b.category === "fable" || b.author.includes("Aesop")).length;
+  const fablesCount = books.filter(
+    (b) => b.category === "fable" || b.author.includes("Aesop")
+  ).length;
 
   return (
     <div id="bookshelf-container" className="max-w-7xl mx-auto px-4 lg:px-8 py-8">
-      {/* Welcome Hero for Young Readers */}
+      {/* Welcome Hero */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-amber-500 via-orange-400 to-yellow-400 p-6 sm:p-8 text-white shadow-xl shadow-amber-200/50 mb-8 border border-amber-300/40">
         <div className="relative z-10 max-w-2xl">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 backdrop-blur-sm text-xs font-bold uppercase tracking-wider mb-3">
@@ -59,7 +70,9 @@ export const BookShelf: React.FC<BookShelfProps> = ({
             Read, Listen, &amp; Create Magical Illustrations!
           </h1>
           <p className="text-sm sm:text-base text-amber-50 font-medium leading-relaxed mb-6">
-            Pre-seeded with timeless classics like <strong>Aesop&apos;s Fables</strong>. Every page can speak aloud with warm narration, interactive phonics sound-outs, and new custom illustrations in 1K, 2K, or 4K!
+            Pre-seeded with timeless classics like <strong>Aesop&apos;s Fables</strong>. Every page
+            can speak aloud with warm narration, interactive phonics sound-outs, and new custom
+            illustrations in 1K, 2K, or 4K!
           </p>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -90,7 +103,6 @@ export const BookShelf: React.FC<BookShelfProps> = ({
           </div>
         </div>
 
-        {/* Decorative corner illustrations */}
         <div className="absolute -right-6 -bottom-8 select-none pointer-events-none opacity-25 sm:opacity-40 text-9xl">
           📚
         </div>
@@ -103,9 +115,7 @@ export const BookShelf: React.FC<BookShelfProps> = ({
             ⭐
           </div>
           <div>
-            <div className="text-xl font-extrabold text-amber-950">
-              {progress.totalStars}
-            </div>
+            <div className="text-xl font-extrabold text-amber-950">{progress.totalStars}</div>
             <div className="text-xs text-amber-800/80 font-medium">Stars Earned</div>
           </div>
         </div>
@@ -115,9 +125,7 @@ export const BookShelf: React.FC<BookShelfProps> = ({
             📖
           </div>
           <div>
-            <div className="text-xl font-extrabold text-stone-900">
-              {progress.totalPagesRead}
-            </div>
+            <div className="text-xl font-extrabold text-stone-900">{progress.totalPagesRead}</div>
             <div className="text-xs text-stone-500 font-medium">Pages Turned</div>
           </div>
         </div>
@@ -147,7 +155,7 @@ export const BookShelf: React.FC<BookShelfProps> = ({
         </div>
       </div>
 
-      {/* Children's Database Filter Tabs */}
+      {/* Filter Tabs */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-2">
           <SlidersHorizontal className="w-4 h-4 text-amber-800" />
@@ -200,7 +208,7 @@ export const BookShelf: React.FC<BookShelfProps> = ({
               id={`book-card-${book.id}`}
               className="bg-white rounded-3xl overflow-hidden border border-amber-200/80 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col group hover:-translate-y-1"
             >
-              {/* Cover Image & Badges with Offline Fallback */}
+              {/* Cover Image */}
               <div className="relative aspect-[4/3] overflow-hidden bg-amber-100">
                 <SafeStoryImage
                   src={book.pages[0]?.currentImageUrl || book.coverImage}
@@ -240,7 +248,9 @@ export const BookShelf: React.FC<BookShelfProps> = ({
                   </div>
                 ) : readCount > 0 ? (
                   <div className="absolute top-3 right-3 z-10 flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500 text-white shadow-sm">
-                    <span>Page {bookStat.currentPage} of {totalPages}</span>
+                    <span>
+                      Page {bookStat.currentPage} of {totalPages}
+                    </span>
                   </div>
                 ) : null}
 
@@ -249,9 +259,7 @@ export const BookShelf: React.FC<BookShelfProps> = ({
                   <h3 className="font-display font-bold text-lg leading-tight drop-shadow-sm">
                     {book.title}
                   </h3>
-                  <p className="text-xs text-amber-100 font-medium">
-                    {book.author}
-                  </p>
+                  <p className="text-xs text-amber-100 font-medium">{book.author}</p>
                 </div>
               </div>
 
@@ -262,7 +270,6 @@ export const BookShelf: React.FC<BookShelfProps> = ({
                     {book.summary}
                   </p>
 
-                  {/* Moral banner if fable */}
                   {book.moral && (
                     <div className="p-2.5 rounded-2xl bg-purple-50/80 border border-purple-200/70 text-[11px] text-purple-900 leading-snug mb-4">
                       <span className="font-bold">Moral: </span>
@@ -271,7 +278,7 @@ export const BookShelf: React.FC<BookShelfProps> = ({
                   )}
                 </div>
 
-                {/* Gamified Progress Bar */}
+                {/* Progress & Actions */}
                 <div className="space-y-3">
                   <div>
                     <div className="flex items-center justify-between text-xs font-bold mb-1">
@@ -288,7 +295,6 @@ export const BookShelf: React.FC<BookShelfProps> = ({
                     </div>
                   </div>
 
-                  {/* Action Buttons */}
                   <div className="flex items-center gap-2 pt-1">
                     <button
                       id={`read-book-btn-${book.id}`}
@@ -304,6 +310,20 @@ export const BookShelf: React.FC<BookShelfProps> = ({
                           : "Start Reading"}
                       </span>
                     </button>
+
+                    {/* Level override button — imported books only */}
+                    {isImported(book) && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOverrideBook(book);
+                        }}
+                        className="p-2.5 rounded-2xl border border-stone-200 hover:bg-stone-50 text-stone-400 hover:text-amber-700 transition-colors"
+                        title="Override reading level"
+                      >
+                        <GraduationCap className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -311,7 +331,7 @@ export const BookShelf: React.FC<BookShelfProps> = ({
           );
         })}
 
-        {/* "Create New Story" Card */}
+        {/* Create New Story Card */}
         <div
           onClick={onOpenCreateStory}
           className="rounded-3xl border-2 border-dashed border-amber-300 hover:border-amber-500 bg-amber-50/50 hover:bg-amber-50/80 p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300 group min-h-[320px]"
@@ -323,7 +343,8 @@ export const BookShelf: React.FC<BookShelfProps> = ({
             Create a New Story
           </h3>
           <p className="text-xs text-amber-800/80 max-w-xs leading-relaxed mb-5">
-            Pick your child&apos;s name, companion animal, and theme. Our AI Storyteller will write a custom 4-page story ready for reading and illustration generation!
+            Pick your child&apos;s name, companion animal, and theme. Our AI Storyteller will write
+            a custom 4-page story ready for reading and illustration generation!
           </p>
           <button
             id="create-custom-story-card-btn"
@@ -332,9 +353,21 @@ export const BookShelf: React.FC<BookShelfProps> = ({
             <span>Launch Story Maker</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
-        
         </div>
       </div>
+
+      {/* Level Override Modal */}
+      {overrideBook && (
+        <LevelOverrideModal
+          book={overrideBook}
+          isOpen={true}
+          onClose={() => setOverrideBook(null)}
+          onSave={async (bookId, level) => {
+            await onLevelOverride(bookId, level);
+            setOverrideBook(null);
+          }}
+        />
+      )}
     </div>
   );
 };
