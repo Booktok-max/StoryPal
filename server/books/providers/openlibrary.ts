@@ -65,6 +65,7 @@ function isChildRelevant(doc: OpenLibraryDoc): boolean {
   if (subjects.some((subject) => BLOCKED_SUBJECT_TERMS.some((term) => subject.includes(term)))) {
     return false;
   }
+  
 
   // If Open Library gives us subjects, require a child-oriented signal.
   // This keeps unmoderated general search results out of the child-facing catalog.
