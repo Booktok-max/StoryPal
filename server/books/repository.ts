@@ -5,9 +5,12 @@ export class BookRepository {
   constructor(private readonly providers: BookProvider[]) {}
 
   async list(query: BookSearchQuery = {}): Promise<Book[]> {
+    // Metadata-only (discovery) providers — e.g. Open Library, Google Books —
+    // don't have readable page content, so they're search-only and excluded
+    // from the default unfiltered catalog listing.
     const providers = query.source
       ? this.providers.filter((p) => p.type === query.source)
-      : this.providers.filter((p) => p.type !== "openlibrary");
+      : this.providers.filter((p) => p.capabilities.fullText);
 
     const results = await Promise.all(
       providers.map((p) => p.search(query))
@@ -28,7 +31,7 @@ export class BookRepository {
   }
 
   getProviders() {
-    return this.providers.map(({ id, name, type }) => ({ id, name, type }));
+    return this.providers.map(({ id, name, type, capabilities }) => ({ id, name, type, capabilities }));
   }
 }
 
