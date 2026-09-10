@@ -23,10 +23,8 @@ const STORAGE_KEY_PROGRESS = "storypals_user_progress_v1";
 const STORAGE_KEY_BOOKS = "storypals_custom_books_v1";
 
 export default function App() {
-  // Check API health on startup to know if AI features are available
   const { aiAvailable } = useApiHealth();
-  // Books are now loaded through the StoryPals catalog API.
-  // Custom AI-created books remain local for Phase 1 and will move into the catalog later.
+
   const [books, setBooks] = useState<Book[]>(INITIAL_BOOKS);
 
   useEffect(() => {
@@ -61,14 +59,10 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
-  // Current active book & page index
   const [selectedBook, setSelectedBook] = useState<Book | null>(INITIAL_BOOKS[0]);
   const [currentPageIndex, setCurrentPageIndex] = useState<number>(0);
-
-  // Active view: "shelf" | "reader" | "passport"
   const [activeView, setActiveView] = useState<"shelf" | "reader" | "passport">("shelf");
 
-  // User Gamified Progress State
   const [progress, setProgress] = useState<UserProgress>(() => {
     if (typeof window !== "undefined") {
       try {
@@ -121,7 +115,6 @@ export default function App() {
     };
   });
 
-  // Save progress to local storage
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_PROGRESS, JSON.stringify(progress));
@@ -130,7 +123,6 @@ export default function App() {
     }
   }, [progress]);
 
-  // Reader Settings
   const [settings, setSettings] = useState<ReaderSettings>({
     fontSize: "large",
     fontFamily: "quicksand",
@@ -138,7 +130,6 @@ export default function App() {
     voice: "Puck",
   });
 
-  // Reading Buddy Chatbot State
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [buddyRole, setBuddyRole] = useState<BuddyRole>("owl");
   const [pendingChatPrompt, setPendingChatPrompt] = useState<{
@@ -146,14 +137,10 @@ export default function App() {
     taskType: "general" | "complex" | "fast";
   } | null>(null);
 
-  // Create Story Modal
   const [isCreateStoryOpen, setIsCreateStoryOpen] = useState(false);
   const [isBookDiscoveryOpen, setIsBookDiscoveryOpen] = useState(false);
 
-  // Badge Notification Toast
-  const [badgeToast, setBadgeToast] = useState<{ name: string; icon: string } | null>(
-    null
-  );
+  const [badgeToast, setBadgeToast] = useState<{ name: string; icon: string } | null>(null);
 
   const unlockBadge = (badgeId: string, badgeName: string, icon: string) => {
     if (!progress.unlockedBadges.includes(badgeId)) {
@@ -165,19 +152,11 @@ export default function App() {
       }));
 
       setBadgeToast({ name: badgeName, icon });
-      confetti({
-        particleCount: 40,
-        spread: 70,
-        origin: { y: 0.2 },
-      });
-
-      setTimeout(() => {
-        setBadgeToast(null);
-      }, 4000);
+      confetti({ particleCount: 40, spread: 70, origin: { y: 0.2 } });
+      setTimeout(() => setBadgeToast(null), 4000);
     }
   };
 
-  // Handler: Selecting a book from the shelf
   const handleSelectBook = (book: Book) => {
     setSelectedBook(book);
     const existing = progress.bookProgress[book.id];
@@ -185,7 +164,6 @@ export default function App() {
     setActiveView("reader");
   };
 
-  // Handler: Page completed
   const handlePageCompleted = (pageNumber: number) => {
     if (!selectedBook) return;
 
@@ -199,11 +177,8 @@ export default function App() {
       starsEarned: 0,
     };
 
-    const newPagesRead = Array.from(
-      new Set([...currentBookProg.pagesRead, pageNumber])
-    );
+    const newPagesRead = Array.from(new Set([...currentBookProg.pagesRead, pageNumber]));
     const isBookNowCompleted = newPagesRead.length >= selectedBook.pages.length;
-
     const newStarsEarned = currentBookProg.starsEarned + 1;
     const newTotalStars = progress.totalStars + 1;
 
@@ -233,16 +208,10 @@ export default function App() {
       };
     });
 
-    if (isBookNowCompleted) {
-      unlockBadge("book-finisher", "Book Champion", "🏆");
-    }
-
-    if (newTotalStars >= 10) {
-      unlockBadge("super-streak", "Star Reader", "⭐");
-    }
+    if (isBookNowCompleted) unlockBadge("book-finisher", "Book Champion", "🏆");
+    if (newTotalStars >= 10) unlockBadge("super-streak", "Star Reader", "⭐");
   };
 
-  // Handler: Exploring words
   const handleWordExplored = (wordInfo: PhonicsWordInfo) => {
     if (!selectedBook) return;
 
@@ -261,20 +230,13 @@ export default function App() {
           ];
 
       if (newWords.length >= 5) {
-        setTimeout(() => {
-          unlockBadge("word-wizard", "Word Wizard", "✨");
-        }, 300);
+        setTimeout(() => unlockBadge("word-wizard", "Word Wizard", "✨"), 300);
       }
 
-      return {
-        ...prev,
-        xp: prev.xp + 2,
-        wordsExplored: newWords,
-      };
+      return { ...prev, xp: prev.xp + 2, wordsExplored: newWords };
     });
   };
 
-  // Handler: Illustration generated
   const handleIllustrationGenerated = (
     pageIndex: number,
     newImageUrl: string,
@@ -289,23 +251,10 @@ export default function App() {
       imageSize: size,
     };
 
-    const updatedBook = {
-      ...selectedBook,
-      pages: updatedPages,
-    };
-
+    const updatedBook = { ...selectedBook, pages: updatedPages };
     setSelectedBook(updatedBook);
+    setBooks((prev) => prev.map((b) => (b.id === updatedBook.id ? updatedBook : b)));
 
-    // Update in books list
-    setBooks((prev) =>
-      prev.map((b) => (b.id === updatedBook.id ? updatedBook : b))
-    );
-
-    // Best-effort persistence so imported-book illustrations survive a
-    // server restart. Fire-and-forget: the image is already showing from
-    // client state above, and providers that can't persist (e.g. Open
-    // Library) just report back `persisted: false`, which is fine — nothing
-    // for the reader to react to either way.
     saveIllustration(updatedBook.id, { pageIndex, imageUrl: newImageUrl, imageSize: size }).catch(
       (err) => console.warn("Failed to persist illustration:", err)
     );
@@ -313,7 +262,6 @@ export default function App() {
     unlockBadge("art-director", "AI Illustrator", "🎨");
   };
 
-  // Handler: Open chat with context
   const handleOpenChatWithContext = (
     promptText: string,
     taskType: "general" | "complex" | "fast"
@@ -322,11 +270,6 @@ export default function App() {
     setIsChatOpen(true);
   };
 
-  // Handler: Book added from Open Library discovery ("Add to My Library").
-  // The book is imported server-side as "pending-review" — it shows up in
-  // this session's shelf right away with that badge, but since the catalog
-  // API only serves "approved" books, it won't reappear after a refresh
-  // until a parent/teacher review step (not yet built) approves it.
   const handleBookAdded = (newBook: Book) => {
     setBooks((prev) => {
       if (prev.some((b) => b.id === newBook.id)) return prev;
@@ -335,7 +278,6 @@ export default function App() {
     unlockBadge("book-scout", "Book Scout", "🔎");
   };
 
-  // Handler: New story generated
   const handleStoryCreated = (newBook: Book) => {
     setBooks((prev) => {
       const updated = [newBook, ...prev];
@@ -351,23 +293,49 @@ export default function App() {
     setSelectedBook(newBook);
     setCurrentPageIndex(0);
     setActiveView("reader");
-
     unlockBadge("story-creator", "Story Maker", "🪄");
   };
 
   const handleUpdateDailyGoal = (newGoal: number) => {
-    setProgress((prev) => ({
-      ...prev,
-      dailyGoalPages: newGoal,
-    }));
+    setProgress((prev) => ({ ...prev, dailyGoalPages: newGoal }));
+  };
+
+  // Handler: Parental reading level override
+  const handleLevelOverride = async (bookId: string, level: Book["levelShort"]) => {
+    const levelFull =
+      level === "Level 1"
+        ? "Level 1 (Early Reader)"
+        : level === "Level 2"
+        ? "Level 2 (Developing)"
+        : "Level 3 (Confident)";
+
+    const response = await fetch(`/api/books/${encodeURIComponent(bookId)}/level`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ levelShort: level, level: levelFull }),
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error((data as any).error || "Failed to save level override.");
+    }
+
+    setBooks((prev) =>
+      prev.map((b) =>
+        b.id === bookId ? { ...b, levelShort: level, level: levelFull } : b
+      )
+    );
+
+    // Keep selected book in sync if it's the one being overridden
+    setSelectedBook((prev) =>
+      prev && prev.id === bookId ? { ...prev, levelShort: level, level: levelFull } : prev
+    );
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-[#fdfbf7] text-stone-800">
-      {/* Offline Status Bar */}
       <OfflineBanner />
 
-      {/* AI Features Unavailable Banner */}
       {aiAvailable === false && (
         <aside className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-2.5 text-xs shadow-sm flex items-center justify-center gap-3 z-50">
           <span className="font-extrabold tracking-wide">✨ AI Features Offline</span>
@@ -380,7 +348,6 @@ export default function App() {
         </aside>
       )}
 
-      {/* Top Navigation */}
       <Navbar
         progress={progress}
         activeView={activeView}
@@ -394,7 +361,6 @@ export default function App() {
         hasActiveBook={!!selectedBook}
       />
 
-      {/* Main Content Area */}
       <main className="flex-1">
         {activeView === "shelf" && (
           <BookShelf
@@ -404,6 +370,7 @@ export default function App() {
             onOpenCreateStory={() => setIsCreateStoryOpen(true)}
             onOpenPassport={() => setActiveView("passport")}
             onOpenBookDiscovery={() => setIsBookDiscoveryOpen(true)}
+            onLevelOverride={handleLevelOverride}
           />
         )}
 
@@ -433,7 +400,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Reading Buddy Chatbot (Multi-Turn Gemini Chat with model routing) */}
       <ReadingBuddyChat
         isOpen={isChatOpen}
         onClose={() => setIsChatOpen(false)}
@@ -449,7 +415,6 @@ export default function App() {
         }}
       />
 
-      {/* Custom AI Story Creator Modal */}
       <BookDiscoveryModal
         isOpen={isBookDiscoveryOpen}
         onClose={() => setIsBookDiscoveryOpen(false)}
@@ -462,7 +427,6 @@ export default function App() {
         onStoryCreated={handleStoryCreated}
       />
 
-      {/* Celebratory Badge Unlock Toast */}
       {badgeToast && (
         <div
           id="badge-unlock-toast"
