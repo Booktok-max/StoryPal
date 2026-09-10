@@ -58,12 +58,24 @@ export const BookDiscoveryModal: React.FC<BookDiscoveryModalProps> = ({
     setHasSearched(true);
 
     try {
-      const response = await fetch(
-        `/api/books/search?q=${encodeURIComponent(q)}&source=openlibrary`
-      );
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Could not find books right now.");
-      setResults(Array.isArray(data.books) ? data.books : []);
+      const [openLibraryRes, standardEbooksRes] = await Promise.allSettled([
+        fetch(`/api/books/search?q=${encodeURIComponent(q)}&source=openlibrary`).then((r) => r.json()),
+        fetch(`/api/books/search?q=${encodeURIComponent(q)}&source=standardebooks`).then((r) => r.json()),
+      ]);
+
+      const merged: Book[] = [];
+      if (openLibraryRes.status === "fulfilled" && Array.isArray(openLibraryRes.value.books)) {
+        merged.push(...openLibraryRes.value.books);
+      }
+      if (standardEbooksRes.status === "fulfilled" && Array.isArray(standardEbooksRes.value.books)) {
+        merged.push(...standardEbooksRes.value.books);
+      }
+
+      if (!merged.length && openLibraryRes.status === "rejected" && standardEbooksRes.status === "rejected") {
+        throw new Error("Could not find books right now.");
+      }
+
+      setResults(merged);
     } catch (err: any) {
       setResults([]);
       setError(err?.message || "Something went wrong. Please try again.");
@@ -138,8 +150,8 @@ export const BookDiscoveryModal: React.FC<BookDiscoveryModalProps> = ({
             </h2>
             <p className="text-sm text-stone-500 mt-1 max-w-2xl">
               Search for children's books by topic, title, or author. Tap a
-              result to see it on Open Library, where you can read more about
-              the book.
+              result to see it on Open Library or Standard Ebooks, where you
+              can read more about the book.
             </p>
           </div>
           <button
@@ -290,7 +302,7 @@ export const BookDiscoveryModal: React.FC<BookDiscoveryModalProps> = ({
                     className="mt-2 inline-flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-50 text-amber-800 hover:bg-amber-100 font-extrabold text-xs disabled:opacity-40"
                   >
                     <BookOpen className="w-3.5 h-3.5" />
-                    View on Open Library
+                    View on {book.tag || "source"}
                     <ExternalLink className="w-3 h-3" />
                   </button>
                 </div>
@@ -301,9 +313,10 @@ export const BookDiscoveryModal: React.FC<BookDiscoveryModalProps> = ({
 
         {/* ── Footer ── */}
         <div className="px-5 py-3 bg-white border-t border-stone-100 text-[11px] text-stone-400">
-          Book information and covers from Open Library (openlibrary.org). Results
-          are filtered for children's content — not all books are available to read
-          inside StoryPals yet.
+          Book information and covers from Open Library (openlibrary.org) and
+          Standard Ebooks (standardebooks.org). Results are filtered for
+          children's content — not all books are available to read inside
+          StoryPals yet.
         </div>
       </div>
     </div>
