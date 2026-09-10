@@ -1,4 +1,4 @@
-import type { Book, BookPage } from "../../../src/types";
+import type { Book, BookPage, BookSourceType } from "../../../src/types";
 import { analyzeTextReadingLevel } from "./readingLevel";
 import { reviewText } from "./safety";
 
@@ -135,6 +135,13 @@ export interface TextBookInput {
   providerId?: string;
   tag?: string;
   colorTheme?: string;
+
+  // Discovery-import path (Phase 4 item 3): the safety scan can still
+  // reject content outright, but anything that would otherwise pass as
+  // "approved" is held at this status instead — an externally-sourced
+  // import always needs a parent/teacher's eyes on it before a child sees
+  // it, even when nothing looked unsafe.
+  forceStatus?: Book["status"];
 }
 
 export function normalizeTextBook(input: TextBookInput): Book {
@@ -142,6 +149,10 @@ export function normalizeTextBook(input: TextBookInput): Book {
   const normalizedText = pages.map((page) => page.text).join("\n");
   const levelShort = analyzeTextReadingLevel(normalizedText);
   const safety = reviewText(normalizedText);
+  const status =
+    input.forceStatus && safety.status !== "rejected"
+      ? input.forceStatus
+      : safety.status;
   const wordCount = normalizedText.split(/\s+/).filter(Boolean).length;
 
   const sourceType = input.sourceType ?? "public-domain";
@@ -182,7 +193,7 @@ export function normalizeTextBook(input: TextBookInput): Book {
     subjects: input.subjects ?? [],
     wordCount,
     estimatedMinutes: Math.max(1, Math.ceil(wordCount / 130)),
-    status: safety.status,
+    status,
     aiEnhanced: false,
   };
 }
