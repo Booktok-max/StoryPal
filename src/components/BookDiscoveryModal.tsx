@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { BookOpen, ExternalLink, Loader2, Search, X, Sparkles } from "lucide-react";
+import { BookOpen, ExternalLink, Loader2, Search, X, Sparkles, LibraryBig, CheckCircle2 } from "lucide-react";
 import { Book } from "../types";
 import { SafeStoryImage } from "./SafeStoryImage";
+import { discoverImportBook } from "../api/client";
 
 interface BookDiscoveryModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onBookAdded: (book: Book) => void;
 }
 
 const QUICK_SEARCHES = [
@@ -20,6 +22,7 @@ const QUICK_SEARCHES = [
 export const BookDiscoveryModal: React.FC<BookDiscoveryModalProps> = ({
   isOpen,
   onClose,
+  onBookAdded,
 }) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Book[]>([]);
@@ -27,12 +30,20 @@ export const BookDiscoveryModal: React.FC<BookDiscoveryModalProps> = ({
   const [error, setError] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
 
+  // Per-book "Add to My Library" state, keyed by book.id
+  const [addingIds, setAddingIds] = useState<Set<string>>(new Set());
+  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+  const [addErrors, setAddErrors] = useState<Record<string, string>>({});
+
   useEffect(() => {
     if (!isOpen) {
       setQuery("");
       setResults([]);
       setError("");
       setHasSearched(false);
+      setAddingIds(new Set());
+      setAddedIds(new Set());
+      setAddErrors({});
     }
   }, [isOpen]);
 
@@ -69,6 +80,46 @@ export const BookDiscoveryModal: React.FC<BookDiscoveryModalProps> = ({
   const openSource = (book: Book) => {
     if (book.source?.sourceUrl)
       window.open(book.source.sourceUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const isAddEligible = (book: Book) =>
+    book.source?.hasFullText === true && book.source?.ebookAccess === "public";
+
+  const handleAddToLibrary = async (book: Book) => {
+    if (!book.source?.externalId) return;
+
+    setAddingIds((prev) => new Set(prev).add(book.id));
+    setAddErrors((prev) => {
+      const next = { ...prev };
+      delete next[book.id];
+      return next;
+    });
+
+    try {
+      const { book: importedBook } = await discoverImportBook({
+        workId: book.source.externalId,
+        title: book.title,
+        author: book.author,
+        summary: book.summary,
+        subjects: book.subjects,
+        coverImage: book.coverImage,
+        sourceUrl: book.source.sourceUrl,
+      });
+
+      setAddedIds((prev) => new Set(prev).add(book.id));
+      onBookAdded(importedBook as Book);
+    } catch (err: any) {
+      setAddErrors((prev) => ({
+        ...prev,
+        [book.id]: err?.message || "Couldn't add this book. Please try again.",
+      }));
+    } finally {
+      setAddingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(book.id);
+        return next;
+      });
+    }
   };
 
   return (
@@ -204,10 +255,39 @@ export const BookDiscoveryModal: React.FC<BookDiscoveryModalProps> = ({
                   <p className="text-xs text-stone-600 mt-2 line-clamp-3 flex-1">
                     {book.summary}
                   </p>
+
+                  {isAddEligible(book) && (
+                    <button
+                      onClick={() => handleAddToLibrary(book)}
+                      disabled={addingIds.has(book.id) || addedIds.has(book.id)}
+                      className="mt-3 inline-flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white font-extrabold text-xs"
+                    >
+                      {addingIds.has(book.id) ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          Adding…
+                        </>
+                      ) : addedIds.has(book.id) ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Added — Pending Review
+                        </>
+                      ) : (
+                        <>
+                          <LibraryBig className="w-3.5 h-3.5" />
+                          Add to My Library
+                        </>
+                      )}
+                    </button>
+                  )}
+                  {addErrors[book.id] && (
+                    <p className="mt-1.5 text-[11px] text-red-600">{addErrors[book.id]}</p>
+                  )}
+
                   <button
                     onClick={() => openSource(book)}
                     disabled={!book.source?.sourceUrl}
-                    className="mt-4 inline-flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-50 text-amber-800 hover:bg-amber-100 font-extrabold text-xs disabled:opacity-40"
+                    className="mt-2 inline-flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-50 text-amber-800 hover:bg-amber-100 font-extrabold text-xs disabled:opacity-40"
                   >
                     <BookOpen className="w-3.5 h-3.5" />
                     View on Open Library
