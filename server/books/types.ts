@@ -34,15 +34,23 @@ export interface BookProvider {
   getBook(externalId: string): Promise<Book | null>;
   /**
    * Persist a generated illustration for one page back to this provider's
-   * storage. Optional — only providers that own writable storage (e.g. the
-   * public-domain JSON catalog) implement this. Providers that don't should
-   * omit the method entirely so the repository knows to skip them.
-   * Returns the updated book, or null if this provider doesn't have the book.
+   * storage. Optional — only providers that own writable storage implement
+   * this. Returns the updated book, or null if this provider doesn't own it.
    */
   updatePageImage?(
     id: string,
     pageIndex: number,
     imageUrl: string,
     imageSize: string
+  ): Promise<Book | null>;
+  /**
+   * Persist a parental reading-level override for a book. Optional — only
+   * writable providers (currently: public-domain) implement this.
+   * Returns the updated book, or null if this provider doesn't own it.
+   */
+  updateBookLevel?(
+    id: string,
+    levelShort: Book["levelShort"],
+    level: Book["level"]
   ): Promise<Book | null>;
 }
