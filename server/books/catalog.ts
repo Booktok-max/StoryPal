@@ -10,3 +10,4 @@ export const bookRepository = new BookRepository([
   openLibraryProvider,
   standardEbooksProvider,
 ]);
+
