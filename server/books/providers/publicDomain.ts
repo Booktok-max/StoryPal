@@ -16,9 +16,8 @@ async function loadBooks(): Promise<Book[]> {
   }
 }
 
-// Serializes writes so two near-simultaneous illustration saves (e.g. the
-// background job finishing one page while another request comes in) can't
-// race and clobber each other via a read-modify-write on the same file.
+// Serializes writes so two near-simultaneous saves can't race and clobber
+// each other via a read-modify-write on the same file.
 let writeQueue: Promise<void> = Promise.resolve();
 
 async function saveBooks(books: Book[]): Promise<void> {
@@ -59,8 +58,6 @@ export const publicDomainProvider: BookProvider = {
     imageUrl: string,
     imageSize: string
   ): Promise<Book | null> {
-    // Chain onto the queue so concurrent saves apply one at a time against
-    // the latest on-disk state instead of a stale in-memory snapshot.
     const result = writeQueue.then(async () => {
       const books = await loadBooks();
       const bookIndex = books.findIndex((book) => book.id === id);
@@ -84,9 +81,35 @@ export const publicDomainProvider: BookProvider = {
       return updatedBook;
     });
 
-    // Keep the queue chain going regardless of this write's outcome, and
-    // swallow the "already settled" branch so a failed write doesn't wedge
-    // every future save.
+    writeQueue = result.then(
+      () => undefined,
+      () => undefined
+    );
+
+    return result;
+  },
+
+  async updateBookLevel(
+    id: string,
+    levelShort: Book["levelShort"],
+    level: Book["level"]
+  ): Promise<Book | null> {
+    const result = writeQueue.then(async () => {
+      const books = await loadBooks();
+      const bookIndex = books.findIndex((book) => book.id === id);
+      if (bookIndex === -1) return null;
+
+      const updatedBook: Book = {
+        ...books[bookIndex],
+        levelShort,
+        level,
+      };
+      books[bookIndex] = updatedBook;
+
+      await saveBooks(books);
+      return updatedBook;
+    });
+
     writeQueue = result.then(
       () => undefined,
       () => undefined
