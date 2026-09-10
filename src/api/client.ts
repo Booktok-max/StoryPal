@@ -157,6 +157,17 @@ export async function generateIllustration(params: {
   });
 }
 
+/** Persist a generated illustration so it survives a server restart. */
+export async function saveIllustration(
+  bookId: string,
+  params: { pageIndex: number; imageUrl: string; imageSize: "1K" | "2K" | "4K" }
+): Promise<{ persisted: boolean; book?: any }> {
+  return apiFetch(`/api/books/${encodeURIComponent(bookId)}/illustration`, {
+    method: "PATCH",
+    body: JSON.stringify(params),
+  });
+}
+
 /** Send a message to the Reading Buddy chatbot */
 export async function sendBuddyChat(params: {
   messages: Array<{ role: string; content: string }>;
