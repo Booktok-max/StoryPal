@@ -184,6 +184,7 @@ export const openLibraryProvider: BookProvider = {
   id: "openlibrary",
   name: "Open Library",
   type: "openlibrary",
+  capabilities: { metadata: true, fullText: false, covers: true, requiresApiKey: false },
 
   async search(query: BookSearchQuery): Promise<BookSearchResult[]> {
     const q = query.q?.trim();
