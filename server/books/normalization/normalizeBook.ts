@@ -123,6 +123,18 @@ export interface TextBookInput {
   language?: string;
   summary?: string;
   category?: Book["category"];
+  coverImage?: string;
+  subjects?: string[];
+  externalId?: string;
+
+  // Provider identity overrides — default to the manually-imported
+  // public-domain path (importer.ts). A provider like Gutenberg that fetches
+  // and normalizes full text itself sets these so the resulting Book carries
+  // its own source type/tag instead of being mislabeled "public-domain".
+  sourceType?: BookSourceType;
+  providerId?: string;
+  tag?: string;
+  colorTheme?: string;
 }
 
 export function normalizeTextBook(input: TextBookInput): Book {
@@ -132,11 +144,15 @@ export function normalizeTextBook(input: TextBookInput): Book {
   const safety = reviewText(normalizedText);
   const wordCount = normalizedText.split(/\s+/).filter(Boolean).length;
 
+  const sourceType = input.sourceType ?? "public-domain";
+  const providerId = input.providerId ?? "public-domain";
+  const externalId = input.externalId ?? slugify(input.title);
+
   return {
-    id: `public-domain:${slugify(input.title)}-${hashText(normalizedText)}`,
+    id: `${providerId}:${externalId}-${hashText(normalizedText)}`,
     title: input.title.trim(),
     author: input.author.trim() || "Unknown author",
-    coverImage: "",
+    coverImage: input.coverImage ?? "",
     level:
       levelShort === "Level 1"
         ? "Level 1 (Early Reader)"
@@ -144,16 +160,16 @@ export function normalizeTextBook(input: TextBookInput): Book {
         ? "Level 2 (Developing)"
         : "Level 3 (Confident)",
     levelShort,
-    colorTheme: "amber",
+    colorTheme: input.colorTheme ?? "amber",
     summary:
       input.summary?.trim() || `A StoryPals reading edition of ${input.title}.`,
     pages,
     category: input.category ?? "classic",
-    tag: "Public Domain",
+    tag: input.tag ?? "Public Domain",
     source: {
-      type: "public-domain",
-      providerId: "public-domain",
-      externalId: slugify(input.title),
+      type: sourceType,
+      providerId,
+      externalId,
       sourceUrl: input.sourceUrl,
     },
     rights: {
@@ -163,7 +179,7 @@ export function normalizeTextBook(input: TextBookInput): Book {
       redistributionAllowed: input.publicDomain,
     },
     language: input.language ?? "en",
-    subjects: [],
+    subjects: input.subjects ?? [],
     wordCount,
     estimatedMinutes: Math.max(1, Math.ceil(wordCount / 130)),
     status: safety.status,
