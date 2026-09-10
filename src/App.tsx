@@ -322,6 +322,19 @@ export default function App() {
     setIsChatOpen(true);
   };
 
+  // Handler: Book added from Open Library discovery ("Add to My Library").
+  // The book is imported server-side as "pending-review" — it shows up in
+  // this session's shelf right away with that badge, but since the catalog
+  // API only serves "approved" books, it won't reappear after a refresh
+  // until a parent/teacher review step (not yet built) approves it.
+  const handleBookAdded = (newBook: Book) => {
+    setBooks((prev) => {
+      if (prev.some((b) => b.id === newBook.id)) return prev;
+      return [newBook, ...prev];
+    });
+    unlockBadge("book-scout", "Book Scout", "🔎");
+  };
+
   // Handler: New story generated
   const handleStoryCreated = (newBook: Book) => {
     setBooks((prev) => {
@@ -440,6 +453,7 @@ export default function App() {
       <BookDiscoveryModal
         isOpen={isBookDiscoveryOpen}
         onClose={() => setIsBookDiscoveryOpen(false)}
+        onBookAdded={handleBookAdded}
       />
 
       <StoryCreatorModal
