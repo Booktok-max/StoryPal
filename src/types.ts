@@ -11,6 +11,7 @@ export interface BookPage {
 export type BookSourceType =
   | "builtin"
   | "openlibrary"
+  | "standardebooks"
   | "public-domain"
   | "uploaded"
   | "ai";
@@ -22,6 +23,10 @@ export interface BookSource {
   providerId: string;
   externalId?: string;
   sourceUrl?: string;
+  /** Open Library's own signal that a full readable text exists somewhere. */
+  hasFullText?: boolean;
+  /** Open Library's ebook_access value ("public", "borrowable", etc.). */
+  ebookAccess?: string;
 }
 
 export interface BookRights {
