@@ -17,6 +17,7 @@ import { OfflineBanner } from "./components/OfflineBanner";
 import { PhonicsWordInfo } from "./utils/phonics";
 import { BookDiscoveryModal } from "./components/BookDiscoveryModal";
 import { useApiHealth } from "./hooks/useApiHealth";
+import { saveIllustration } from "./api/client";
 
 const STORAGE_KEY_PROGRESS = "storypals_user_progress_v1";
 const STORAGE_KEY_BOOKS = "storypals_custom_books_v1";
@@ -298,6 +299,15 @@ export default function App() {
     // Update in books list
     setBooks((prev) =>
       prev.map((b) => (b.id === updatedBook.id ? updatedBook : b))
+    );
+
+    // Best-effort persistence so imported-book illustrations survive a
+    // server restart. Fire-and-forget: the image is already showing from
+    // client state above, and providers that can't persist (e.g. Open
+    // Library) just report back `persisted: false`, which is fine — nothing
+    // for the reader to react to either way.
+    saveIllustration(updatedBook.id, { pageIndex, imageUrl: newImageUrl, imageSize: size }).catch(
+      (err) => console.warn("Failed to persist illustration:", err)
     );
 
     unlockBadge("art-director", "AI Illustrator", "🎨");
