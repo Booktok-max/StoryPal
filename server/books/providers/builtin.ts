@@ -13,6 +13,7 @@ export const builtinProvider: BookProvider = {
   id: "builtin",
   name: "StoryPals Built-in Library",
   type: "builtin",
+  capabilities: { metadata: true, fullText: true, covers: true, requiresApiKey: false },
 
   async search(query: BookSearchQuery): Promise<BookSearchResult[]> {
     const q = query.q?.trim().toLowerCase();
