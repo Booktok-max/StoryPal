@@ -129,6 +129,22 @@ export async function searchBooks(q: string, source?: string): Promise<{ books: 
   return apiFetch(`/api/books/search?${query}`);
 }
 
+/** "Add to My Library": import a discovered Open Library book's full text. */
+export async function discoverImportBook(params: {
+  workId: string;
+  title: string;
+  author: string;
+  summary?: string;
+  subjects?: string[];
+  coverImage?: string;
+  sourceUrl?: string;
+}): Promise<{ book: any }> {
+  return apiFetch("/api/books/discover-import", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
 /** Get a single book by ID */
 export async function fetchBook(id: string): Promise<{ book: any }> {
   return apiFetch(`/api/books/${encodeURIComponent(id)}`);
