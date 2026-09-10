@@ -13,7 +13,7 @@ if (!DATABASE_URL) {
 
 // Lazy-initialize so the app can start without DB during migration/development
 let _sql: ReturnType<typeof postgres> | null = null;
-let _db: ReturnType<typeof drizzle> | null = null;
+let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
 export function getDb() {
   if (!_db) {
