@@ -225,6 +225,11 @@ export const BookShelf: React.FC<BookShelfProps> = ({
                       {book.tag}
                     </span>
                   )}
+                  {book.status === "pending-review" && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-500/90 text-white backdrop-blur-xs">
+                      Pending Review
+                    </span>
+                  )}
                 </div>
 
                 {/* Completion Status */}
