@@ -217,6 +217,48 @@ async function startServer() {
     }
   });
 
+  // Persist a generated illustration for one page so it survives a server
+  // restart. Only writable providers (currently: public-domain) actually
+  // save anything — for other sources this just confirms the image is
+  // fine to keep client-side-only and reports that nothing was persisted.
+  app.patch("/api/books/:id/illustration", async (req: Request, res: Response): Promise<any> => {
+    try {
+      const { pageIndex, imageUrl, imageSize } = req.body;
+
+      if (typeof pageIndex !== "number" || pageIndex < 0) {
+        return res.status(400).json({ error: "A valid pageIndex is required." });
+      }
+      const validSizes = ["1K", "2K", "4K"];
+      if (typeof imageUrl !== "string" || !imageUrl) {
+        return res.status(400).json({ error: "imageUrl is required." });
+      }
+      if (typeof imageSize !== "string" || !validSizes.includes(imageSize)) {
+        return res.status(400).json({ error: "imageSize must be one of 1K, 2K, 4K." });
+      }
+      // Illustrations are returned as data URLs; cap to the same 4K-ish
+      // ceiling generate-illustration itself tolerates so this endpoint
+      // can't be used to smuggle arbitrarily large payloads to disk.
+      if (imageUrl.length > 15_000_000) {
+        return res.status(413).json({ error: "imageUrl payload is too large." });
+      }
+
+      const updatedBook = await bookRepository.updatePageImage(
+        req.params.id,
+        pageIndex,
+        imageUrl,
+        imageSize
+      );
+
+      if (!updatedBook) {
+        return res.json({ persisted: false });
+      }
+      return res.json({ persisted: true, book: updatedBook });
+    } catch (err: any) {
+      console.error("Illustration persistence error:", err);
+      return res.status(500).json({ error: err?.message || "Failed to save illustration." });
+    }
+  });
+
   // 1. Text to Speech endpoint using gemini-3.1-flash-tts-preview
   app.post("/api/tts", aiRateLimiter, async (req: Request, res: Response): Promise<any> => {
     try {
