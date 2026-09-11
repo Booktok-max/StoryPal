@@ -1,11 +1,14 @@
-import { pgTable, uuid, integer, boolean, timestamp, date, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, integer, boolean, timestamp, date, uniqueIndex } from "drizzle-orm/pg-core";
 import { childProfiles } from "./childProfiles";
-import { books } from "./books";
 
+// bookId is the catalog Book.id string (e.g. "openlibrary:OL123W",
+// "builtin:tortoise-hare") — not a FK into the `books` table. The book
+// catalog is provider-driven (Open Library, Standard Ebooks, public-domain
+// JSON, etc.), not backed by DB rows, so there's no UUID to reference here.
 export const readingProgress = pgTable("reading_progress", {
   id: uuid("id").primaryKey().defaultRandom(),
   childId: uuid("child_id").notNull().references(() => childProfiles.id, { onDelete: "cascade" }),
-  bookId: uuid("book_id").notNull().references(() => books.id, { onDelete: "cascade" }),
+  bookId: varchar("book_id", { length: 500 }).notNull(),
   currentPage: integer("current_page").notNull().default(0),
   completed: boolean("completed").notNull().default(false),
   pagesRead: integer("pages_read").notNull().default(0),
@@ -14,14 +17,14 @@ export const readingProgress = pgTable("reading_progress", {
   startedAt: timestamp("started_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
-}, (table) => [
-  uniqueIndex("reading_progress_unique").on(table.childId, table.bookId),
-]);
+}, (table) => ({
+  readingProgressUnique: uniqueIndex("reading_progress_unique").on(table.childId, table.bookId),
+}));
 
 export const readingSessions = pgTable("reading_sessions", {
   id: uuid("id").primaryKey().defaultRandom(),
   childId: uuid("child_id").notNull().references(() => childProfiles.id, { onDelete: "cascade" }),
-  bookId: uuid("book_id").notNull().references(() => books.id, { onDelete: "cascade" }),
+  bookId: varchar("book_id", { length: 500 }).notNull(),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
   endedAt: timestamp("ended_at", { withTimezone: true }),
   pagesRead: integer("pages_read").notNull().default(0),
@@ -39,6 +42,6 @@ export const dailyActivity = pgTable("daily_activity", {
   stars: integer("stars").notNull().default(0),
   goalMet: boolean("goal_met").notNull().default(false),
   xp: integer("xp").notNull().default(0),
-}, (table) => [
-  uniqueIndex("daily_activity_unique").on(table.childId, table.activityDate),
-]);
+}, (table) => ({
+  dailyActivityUnique: uniqueIndex("daily_activity_unique").on(table.childId, table.activityDate),
+}));
