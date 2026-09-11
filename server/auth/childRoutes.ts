@@ -1,21 +1,14 @@
-/**
- * Child profile routes — Sprint B (Identity).
- *
- * GET    /api/children              list children for authed parent
- * POST   /api/children              create child profile
- * PATCH  /api/children/:id          update child profile
- * DELETE /api/children/:id          delete child profile
- *
- * Mount with:
- *   import childRoutes from "./server/auth/childRoutes.js";
- *   app.use("/api/children", childRoutes);
- */
-
 import { Router, Request, Response } from "express";
-import { db } from "../../db/client.js";
+import { getDb } from "../../db/client.js";
 import { childProfiles, childSettings } from "../../db/schema/childProfiles.js";
 import { eq, and } from "drizzle-orm";
 import { loadSession, requireAuth } from "./middleware.js";
+
+// See server/auth/repository.ts for why this proxy exists.
+const db = new Proxy(
+  {},
+  { get: (_target, prop) => (getDb() as any)[prop] },
+) as ReturnType<typeof getDb>;
 
 const router = Router();
 router.use(loadSession, requireAuth);

@@ -1,15 +1,5 @@
-/**
- * Auth repository — wraps all DB operations for Sprint B (Identity).
- *
- * Uses Node's built-in `crypto` only; no external auth libraries needed
- * for the core secret management.  Password hashing uses bcrypt (to be
- * installed: npm install bcrypt @types/bcrypt).  If bcrypt is unavailable
- * at runtime the file throws at import time — that's intentional: auth
- * must never silently degrade to plaintext.
- */
-
 import crypto from "crypto";
-import { db } from "../../db/client.js";
+import { getDb } from "../../db/client.js";
 import { users, userStatusEnum } from "../../db/schema/users.js";
 import {
   userPasswords,
@@ -20,7 +10,17 @@ import {
 import { childProfiles } from "../../db/schema/childProfiles.js";
 import { eq, and, gt, count, sql } from "drizzle-orm";
 
+// db/client.ts exposes a lazy getDb() (so the app can boot before
+// DATABASE_URL is configured), not a top-level `db` export. This proxy lets
+// every call site below read as plain `db.select()/.insert()/...` while
+// still only resolving the real connection the moment a query actually runs.
 // ── Constants ─────────────────────────────────────────────────────────────────
+
+const db = new Proxy(
+  {},
+  { get: (_target, prop) => (getDb() as any)[prop] },
+) as ReturnType<typeof getDb>;
+
 
 const SESSION_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 const RESET_TTL_MS = 60 * 60 * 1000;              // 1 hour
