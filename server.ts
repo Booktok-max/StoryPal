@@ -137,6 +137,151 @@ async function startServer() {
     res.json({ providers: bookRepository.getProviders() });
   });
 
+  // ── Cover placeholder (Spec Section 6.1, tier 6) ────────────────────────────
+  // Deterministic, dependency-free fallback so a book cover can NEVER fail to
+  // render: same title+author always produces the same SVG, generated locally
+  // (no network call, no third-party asset), so this route itself cannot 404.
+  const PLACEHOLDER_PALETTE: Array<[string, string]> = [
+    ["#F97362", "#7A2E24"], // coral
+    ["#4C8577", "#1F3A33"], // teal
+    ["#6C7BC4", "#2A2F5C"], // periwinkle
+    ["#E8A93A", "#5C3E10"], // amber
+    ["#9B6FB0", "#3B2245"], // plum
+    ["#5CA5D8", "#1B3C55"], // sky
+  ];
+
+  function hashString(input: string): number {
+    let hash = 0;
+    for (let i = 0; i < input.length; i++) {
+      hash = (hash * 31 + input.charCodeAt(i)) | 0;
+    }
+    return Math.abs(hash);
+  }
+
+  function initialsFor(title: string): string {
+    const t = title.trim();
+    if (!t) return "?";
+    const words = t.split(/\s+/).filter(Boolean);
+    const first = words[0]?.[0] || "";
+    const second = words.length > 1 ? words[1]?.[0] || "" : "";
+    return (first + second).toUpperCase() || "?";
+  }
+
+  function escapeXml(input: string): string {
+    return input
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+  }
+
+  function wrapTitle(title: string, maxCharsPerLine = 16, maxLines = 3): string[] {
+    const words = title.trim().split(/\s+/).filter(Boolean);
+    const lines: string[] = [];
+    let current = "";
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (candidate.length > maxCharsPerLine && current) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = candidate;
+      }
+      if (lines.length === maxLines) break;
+    }
+    if (current && lines.length < maxLines) lines.push(current);
+    if (lines.length === maxLines && words.join(" ").length > lines.join(" ").length) {
+      lines[maxLines - 1] = lines[maxLines - 1].replace(/.{0,3}$/, "...");
+    }
+    return lines.length > 0 ? lines : ["Untitled"];
+  }
+
+  app.get("/api/covers/placeholder", (req: Request, res: Response): any => {
+    const title = sanitizeString(req.query.title, 120) || "Untitled";
+    const author = sanitizeString(req.query.author, 120) || "";
+
+    const seed = hashString(`${title}::${author}`);
+    const [bg, fg] = PLACEHOLDER_PALETTE[seed % PLACEHOLDER_PALETTE.length];
+    const initials = initialsFor(title);
+    const titleLines = wrapTitle(title);
+
+    const width = 300;
+    const height = 450;
+    const titleStartY = height / 2 - ((titleLines.length - 1) * 24) / 2;
+
+    const label = escapeXml(`Cover placeholder for ${title}${author ? " by " + author : ""}`);
+
+    const titleLinesSvg = titleLines
+      .map(
+        (line, i) =>
+          `<text x="50%" y="${titleStartY + i * 26}" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="20" font-weight="600" fill="${fg}">${escapeXml(line)}</text>`
+      )
+      .join("\n  ");
+
+    const authorSvg = author
+      ? `<text x="50%" y="${height - 40}" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="15" fill="${fg}" fill-opacity="0.8">${escapeXml(author)}</text>`
+      : "";
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${label}">
+  <rect width="${width}" height="${height}" fill="${bg}"/>
+  <rect x="16" y="16" width="${width - 32}" height="${height - 32}" fill="none" stroke="${fg}" stroke-opacity="0.35" stroke-width="2"/>
+  <text x="50%" y="90" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="48" font-weight="700" fill="${fg}" fill-opacity="0.55">${escapeXml(initials)}</text>
+  ${titleLinesSvg}
+  ${authorSvg}
+</svg>`;
+
+    res.setHeader("Content-Type", "image/svg+xml");
+    // Deterministic output → safe to cache aggressively both client- and edge-side.
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    return res.status(200).send(svg);
+  });
+
+  // Builds an absolute placeholder-cover URL for a given book, using this
+  // request's own origin so it works in dev, behind Railway's proxy, and
+  // behind any future CDN without hardcoding a host.
+  function placeholderCoverUrl(req: Request, title: string, author?: string): string {
+    const origin = `${req.protocol}://${req.get("host")}`;
+    const params = new URLSearchParams({ title: title || "Untitled" });
+    if (author) params.set("author", author);
+    return `${origin}/api/covers/placeholder?${params.toString()}`;
+  }
+
+  // Tracks how often the placeholder tier had to be used, as a lightweight
+  // in-process counter (Section 6.1 "Monitoring"). Reset on process restart;
+  // a durable counter belongs in the Section 29/37 monitoring work.
+  let coverFallbackCount = 0;
+  let coverResolvedCount = 0;
+
+  // Guarantees every book object leaving this API has a resolvable cover
+  // (Section 6.1, tiers 1-6): pass through an existing coverImage untouched,
+  // otherwise fill in the deterministic placeholder. Never mutates the
+  // caller's object.
+  function withGuaranteedCover<T extends { coverImage?: string | null; title?: string; author?: string }>(
+    req: Request,
+    book: T
+  ): T & { coverImage: string; coverIsPlaceholder: boolean } {
+    coverResolvedCount++;
+    const hasCover = typeof book.coverImage === "string" && book.coverImage.trim().length > 0;
+    if (hasCover) {
+      return { ...book, coverImage: book.coverImage as string, coverIsPlaceholder: false };
+    }
+    coverFallbackCount++;
+    return {
+      ...book,
+      coverImage: placeholderCoverUrl(req, book.title || "Untitled", book.author),
+      coverIsPlaceholder: true,
+    };
+  }
+
+  app.get("/api/covers/fallback-stats", (_req: Request, res: Response) => {
+    res.json({
+      resolved: coverResolvedCount,
+      fallbackToPlaceholder: coverFallbackCount,
+      fallbackRate: coverResolvedCount > 0 ? coverFallbackCount / coverResolvedCount : 0,
+    });
+  });
+
   app.get("/api/books", async (req: Request, res: Response): Promise<any> => {
     try {
       const page = Number(req.query.page) || 1;
@@ -151,7 +296,7 @@ async function startServer() {
       });
 
       return res.json({
-        books,
+        books: books.map((b: any) => withGuaranteedCover(req, b)),
         total: books.length,
         page,
         pageSize,
@@ -169,7 +314,7 @@ async function startServer() {
 
       const source = typeof req.query.source === "string" ? req.query.source as any : undefined;
       const books = await bookRepository.search({ q, source, page: 1, pageSize: 20 });
-      return res.json({ books, total: books.length, query: q });
+      return res.json({ books: books.map((b: any) => withGuaranteedCover(req, b)), total: books.length, query: q });
     } catch (err: any) {
       console.error("Book search error:", err);
       return res.status(500).json({ error: err?.message || "Failed to search books." });
@@ -225,7 +370,7 @@ async function startServer() {
     try {
       const book = await bookRepository.getById(req.params.id);
       if (!book) return res.status(404).json({ error: "Book not found." });
-      return res.json({ book });
+      return res.json({ book: withGuaranteedCover(req, book as any) });
     } catch (err: any) {
       console.error("Book lookup error:", err);
       return res.status(500).json({ error: err?.message || "Failed to load book." });
@@ -426,6 +571,7 @@ async function startServer() {
               prebuiltVoiceConfig: { voiceName: chosenVoice },
             },
           },
+          abortSignal: controller.signal,
         },
       });
 
@@ -500,6 +646,7 @@ async function startServer() {
             aspectRatio: validatedRatio,
             imageSize: validatedSize,
           },
+          abortSignal: imgController.signal,
         },
       });
 
@@ -592,7 +739,7 @@ Your core directives:
       const response = await ai.models.generateContent({
         model: selectedModel,
         contents,
-        config: { systemInstruction },
+        config: { systemInstruction, abortSignal: chatController.signal },
       });
 
       clearTimeout(chatTimeout);
@@ -671,7 +818,7 @@ Return ONLY a valid JSON object matching this structure:
       const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
         contents: prompt,
-        config: { responseMimeType: "application/json" },
+        config: { responseMimeType: "application/json", abortSignal: storyController.signal },
       });
 
       clearTimeout(storyTimeout);
