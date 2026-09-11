@@ -150,6 +150,43 @@ export async function fetchBook(id: string): Promise<{ book: any }> {
   return apiFetch(`/api/books/${encodeURIComponent(id)}`);
 }
 
+// ── Progress persistence ────────────────────────────────────────────────────
+// No auth yet, so these work against a single auto-provisioned "default"
+// child profile. localStorage stays the fast optimistic cache; the DB is
+// the source of truth once it's reachable.
+
+/** Get (or create) the default child profile's ID. Call once and cache it. */
+export async function fetchDefaultChildId(): Promise<{ childId: string }> {
+  return apiFetch("/api/child/default");
+}
+
+/** Load full progress for a child from the DB */
+export async function fetchProgress(childId: string): Promise<{ progress: any }> {
+  return apiFetch(`/api/progress/${encodeURIComponent(childId)}`);
+}
+
+/** Record a page read. Fire-and-forget from the caller's perspective. */
+export async function recordPage(
+  childId: string,
+  params: { bookId: string; pageNumber: number; starsEarned?: number; totalPages?: number }
+): Promise<{ persisted: boolean }> {
+  return apiFetch(`/api/progress/${encodeURIComponent(childId)}/page`, {
+    method: "PATCH",
+    body: JSON.stringify(params),
+  });
+}
+
+/** Unlock a badge server-side. Idempotent — safe to call more than once. */
+export async function unlockBadgeRemote(
+  childId: string,
+  params: { badgeId: string; badgeName?: string; icon?: string }
+): Promise<{ persisted: boolean }> {
+  return apiFetch(`/api/progress/${encodeURIComponent(childId)}/badge`, {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
 /** Generate TTS audio for story text */
 export async function generateTts(text: string, voice: string = "Puck"): Promise<TtsResponse> {
   return apiFetch("/api/tts", {

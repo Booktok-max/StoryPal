@@ -17,10 +17,11 @@ import { OfflineBanner } from "./components/OfflineBanner";
 import { PhonicsWordInfo } from "./utils/phonics";
 import { BookDiscoveryModal } from "./components/BookDiscoveryModal";
 import { useApiHealth } from "./hooks/useApiHealth";
-import { saveIllustration } from "./api/client";
+import { saveIllustration, fetchDefaultChildId, fetchProgress, recordPage, unlockBadgeRemote } from "./api/client";
 
 const STORAGE_KEY_PROGRESS = "storypals_user_progress_v1";
 const STORAGE_KEY_BOOKS = "storypals_custom_books_v1";
+const STORAGE_KEY_CHILD_ID = "storypals_child_id_v1";
 
 export default function App() {
   const { aiAvailable } = useApiHealth();
@@ -123,6 +124,52 @@ export default function App() {
     }
   }, [progress]);
 
+  // ── DB-backed progress (Sprint 5, issue 02) ─────────────────────────────────
+  // No auth yet: resolve (or provision) a single default child profile, cache
+  // its ID, then merge DB progress over the localStorage snapshot. DB wins on
+  // conflict; if the DB is unreachable this silently falls back to the
+  // localStorage-only behavior above.
+  // TODO: replace with the session's actual childId once auth exists.
+  const [childId, setChildId] = useState<string | null>(() =>
+    typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY_CHILD_ID) : null
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        let id = childId;
+        if (!id) {
+          const { childId: fetchedId } = await fetchDefaultChildId();
+          if (cancelled) return;
+          id = fetchedId;
+          localStorage.setItem(STORAGE_KEY_CHILD_ID, id);
+          setChildId(id);
+        }
+
+        const { progress: dbProgress } = await fetchProgress(id);
+        if (cancelled || !dbProgress) return;
+
+        setProgress((prev) => ({
+          ...prev,
+          ...dbProgress,
+          dailyActivity: dbProgress.dailyActivity
+            ? reconcile7DayActivity(dbProgress.dailyActivity)
+            : prev.dailyActivity,
+        }));
+      } catch (e) {
+        // DB unavailable or child not found yet — keep using localStorage only.
+        console.warn("Could not load progress from DB, using local cache", e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [settings, setSettings] = useState<ReaderSettings>({
     fontSize: "large",
     fontFamily: "quicksand",
@@ -154,6 +201,12 @@ export default function App() {
       setBadgeToast({ name: badgeName, icon });
       confetti({ particleCount: 40, spread: 70, origin: { y: 0.2 } });
       setTimeout(() => setBadgeToast(null), 4000);
+
+      if (childId) {
+        unlockBadgeRemote(childId, { badgeId, badgeName, icon }).catch((e) =>
+          console.warn("Could not persist badge unlock", e)
+        );
+      }
     }
   };
 
@@ -210,6 +263,15 @@ export default function App() {
 
     if (isBookNowCompleted) unlockBadge("book-finisher", "Book Champion", "🏆");
     if (newTotalStars >= 10) unlockBadge("super-streak", "Star Reader", "⭐");
+
+    if (childId) {
+      recordPage(childId, {
+        bookId,
+        pageNumber,
+        starsEarned: 1,
+        totalPages: selectedBook.pages.length,
+      }).catch((e) => console.warn("Could not persist page read", e));
+    }
   };
 
   const handleWordExplored = (wordInfo: PhonicsWordInfo) => {
