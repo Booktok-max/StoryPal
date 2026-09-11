@@ -151,7 +151,11 @@ function toBook(entry: OpdsEntry): Book {
     id: `standardebooks:${externalId}`,
     title: entry.title,
     author: entry.author,
-    coverImage: entry.coverUrl || "",
+    coverImage: entry.coverUrl
+      ? entry.coverUrl.startsWith("http")
+        ? entry.coverUrl
+        : `https://standardebooks.org${entry.coverUrl}`
+      : "",
     level:
       levelShort === "Level 1"
         ? "Level 1 (Early Reader)"

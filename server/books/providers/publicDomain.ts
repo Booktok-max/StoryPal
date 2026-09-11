@@ -117,4 +117,28 @@ export const publicDomainProvider: BookProvider = {
 
     return result;
   },
+
+  async updateBookStatus(
+    id: string,
+    status: "approved" | "rejected"
+  ): Promise<Book | null> {
+    const result = writeQueue.then(async () => {
+      const books = await loadBooks();
+      const bookIndex = books.findIndex((book) => book.id === id);
+      if (bookIndex === -1) return null;
+
+      const updatedBook: Book = { ...books[bookIndex], status };
+      books[bookIndex] = updatedBook;
+
+      await saveBooks(books);
+      return updatedBook;
+    });
+
+    writeQueue = result.then(
+      () => undefined,
+      () => undefined
+    );
+
+    return result;
+  },
 };

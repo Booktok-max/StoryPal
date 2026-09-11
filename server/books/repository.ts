@@ -61,6 +61,23 @@ export class BookRepository {
     return null;
   }
 
+  /**
+   * Approve or reject a pending-review book. Only writable providers
+   * (currently: public-domain) persist the change — for all others this
+   * returns null and the client applies the update to its own state.
+   */
+  async updateBookStatus(
+    id: string,
+    status: "approved" | "rejected"
+  ): Promise<Book | null> {
+    for (const provider of this.providers) {
+      if (!provider.updateBookStatus) continue;
+      const updated = await provider.updateBookStatus(id, status);
+      if (updated) return updated;
+    }
+    return null;
+  }
+
   getProviders() {
     return this.providers.map(({ id, name, type, capabilities }) => ({ id, name, type, capabilities }));
   }

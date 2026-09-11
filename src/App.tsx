@@ -394,6 +394,12 @@ export default function App() {
     );
   };
 
+  const handleStatusUpdate = (bookId: string, status: "approved" | "rejected") => {
+    setBooks((prev) =>
+      prev.map((b) => (b.id === bookId ? { ...b, status } : b))
+    );
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-[#fdfbf7] text-stone-800">
       <OfflineBanner />
@@ -433,6 +439,7 @@ export default function App() {
             onOpenPassport={() => setActiveView("passport")}
             onOpenBookDiscovery={() => setIsBookDiscoveryOpen(true)}
             onLevelOverride={handleLevelOverride}
+            onStatusUpdate={handleStatusUpdate}
           />
         )}
 

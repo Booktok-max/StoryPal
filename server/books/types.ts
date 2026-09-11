@@ -53,4 +53,13 @@ export interface BookProvider {
     levelShort: Book["levelShort"],
     level: Book["level"]
   ): Promise<Book | null>;
+  /**
+   * Approve or reject a pending-review book. Optional — only writable
+   * providers (currently: public-domain) implement this.
+   * Returns the updated book, or null if this provider doesn't own it.
+   */
+  updateBookStatus?(
+    id: string,
+    status: "approved" | "rejected"
+  ): Promise<Book | null>;
 }

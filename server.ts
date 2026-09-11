@@ -72,7 +72,7 @@ async function startServer() {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:", "https://covers.openlibrary.org"],
+        imgSrc: ["'self'", "data:", "https://covers.openlibrary.org", "https://standardebooks.org"],
         connectSrc: ["'self'", "https://openlibrary.org", "https://generativelanguage.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
       },
@@ -267,6 +267,29 @@ async function startServer() {
     } catch (err: any) {
       console.error("Level override error:", err);
       return res.status(500).json({ error: err?.message || "Failed to save level override." });
+    }
+  });
+
+  // Admin: approve or reject a pending-review book. Requires the same
+  // BOOK_IMPORT_ADMIN_KEY header used by the import endpoint.
+  app.patch("/api/books/:id/status", async (req: Request, res: Response): Promise<any> => {
+    const configuredKey = process.env.BOOK_IMPORT_ADMIN_KEY;
+    const suppliedKey = req.header("x-storypals-admin-key");
+    if (!configuredKey || suppliedKey !== configuredKey) {
+      return res.status(403).json({ error: "Invalid or missing admin key." });
+    }
+
+    try {
+      const { status } = req.body;
+      if (status !== "approved" && status !== "rejected") {
+        return res.status(400).json({ error: "status must be \"approved\" or \"rejected\"." });
+      }
+
+      const updatedBook = await bookRepository.updateBookStatus(req.params.id, status);
+      return res.json({ persisted: !!updatedBook, book: updatedBook ?? null });
+    } catch (err: any) {
+      console.error("Book status update error:", err);
+      return res.status(500).json({ error: err?.message || "Failed to update book status." });
     }
   });
 

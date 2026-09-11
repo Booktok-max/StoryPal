@@ -187,6 +187,19 @@ export async function unlockBadgeRemote(
   });
 }
 
+/** Approve or reject a pending-review book (admin only) */
+export async function updateBookStatus(
+  bookId: string,
+  status: "approved" | "rejected",
+  adminKey: string
+): Promise<{ persisted: boolean; book: unknown | null }> {
+  return apiFetch(`/api/books/${encodeURIComponent(bookId)}/status`, {
+    method: "PATCH",
+    headers: { "x-storypals-admin-key": adminKey },
+    body: JSON.stringify({ status }),
+  });
+}
+
 /** Generate TTS audio for story text */
 export async function generateTts(text: string, voice: string = "Puck"): Promise<TtsResponse> {
   return apiFetch("/api/tts", {

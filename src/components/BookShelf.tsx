@@ -16,6 +16,10 @@ import {
 import { Book, UserProgress } from "../types";
 import { SafeStoryImage } from "./SafeStoryImage";
 import { LevelOverrideModal } from "./LevelOverrideModal";
+import { updateBookStatus } from "../api/client";
+
+const ADMIN_MODE = import.meta.env.VITE_ADMIN_MODE === "true";
+const ADMIN_KEY = import.meta.env.VITE_ADMIN_KEY ?? "";
 
 const IMPORTED_SOURCES = new Set(["public-domain", "openlibrary", "standardebooks"]);
 const isImported = (book: Book) =>
@@ -29,6 +33,7 @@ interface BookShelfProps {
   onOpenPassport: () => void;
   onOpenBookDiscovery: () => void;
   onLevelOverride: (bookId: string, level: Book["levelShort"]) => Promise<void>;
+  onStatusUpdate: (bookId: string, status: "approved" | "rejected") => void;
 }
 
 export const BookShelf: React.FC<BookShelfProps> = ({
@@ -39,9 +44,23 @@ export const BookShelf: React.FC<BookShelfProps> = ({
   onOpenPassport,
   onOpenBookDiscovery,
   onLevelOverride,
+  onStatusUpdate,
 }) => {
   const [filter, setFilter] = useState<string>("all");
   const [overrideBook, setOverrideBook] = useState<Book | null>(null);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+
+  const handleReviewAction = async (book: Book, status: "approved" | "rejected") => {
+    setReviewingId(book.id);
+    try {
+      await updateBookStatus(book.id, status, ADMIN_KEY);
+      onStatusUpdate(book.id, status);
+    } catch (err) {
+      console.error("Status update failed:", err);
+    } finally {
+      setReviewingId(null);
+    }
+  };
 
   const filteredBooks = books.filter((b) => {
     if (filter === "all") return true;
@@ -295,6 +314,25 @@ export const BookShelf: React.FC<BookShelfProps> = ({
                     </div>
                   </div>
 
+                  {/* Admin approve/reject — pending-review books only */}
+                  {ADMIN_MODE && book.status === "pending-review" ? (
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleReviewAction(book, "approved"); }}
+                        disabled={reviewingId === book.id}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-extrabold text-xs shadow-md transition-all active:scale-95"
+                      >
+                        ✓ Approve
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleReviewAction(book, "rejected"); }}
+                        disabled={reviewingId === book.id}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-rose-500 hover:bg-rose-600 disabled:opacity-50 text-white font-extrabold text-xs shadow-md transition-all active:scale-95"
+                      >
+                        ✗ Reject
+                      </button>
+                    </div>
+                  ) : (
                   <div className="flex items-center gap-2 pt-1">
                     <button
                       id={`read-book-btn-${book.id}`}
@@ -325,6 +363,7 @@ export const BookShelf: React.FC<BookShelfProps> = ({
                       </button>
                     )}
                   </div>
+                  )}
                 </div>
               </div>
             </div>
