@@ -78,6 +78,24 @@ export class BookRepository {
     return null;
   }
 
+  /**
+   * Admin manual cover replace/re-fetch (Section 6.1 "Admin"). Only
+   * writable providers (currently: public-domain) persist the change —
+   * for all others this returns null and the client applies the update
+   * to its own state until the next reload.
+   */
+  async updateBookCover(
+    id: string,
+    coverImage: string
+  ): Promise<Book | null> {
+    for (const provider of this.providers) {
+      if (!provider.updateBookCover) continue;
+      const updated = await provider.updateBookCover(id, coverImage);
+      if (updated) return updated;
+    }
+    return null;
+  }
+
   getProviders() {
     return this.providers.map(({ id, name, type, capabilities }) => ({ id, name, type, capabilities }));
   }

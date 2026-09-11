@@ -438,6 +438,51 @@ async function startServer() {
     }
   });
 
+  // Admin: replace or force-regenerate a book's cover (Section 6.1
+  // "Admin"). Requires the same BOOK_IMPORT_ADMIN_KEY header used by the
+  // import and status endpoints. Pass either an explicit coverImage URL,
+  // or refetchPlaceholder: true to reset the cover to our own
+  // deterministic tier-6 placeholder (useful when a hotlinked cover has
+  // gone stale/broken and no better source is available yet).
+  app.patch("/api/books/:id/cover", async (req: Request, res: Response): Promise<any> => {
+    const configuredKey = process.env.BOOK_IMPORT_ADMIN_KEY;
+    const suppliedKey = req.header("x-storypals-admin-key");
+    if (!configuredKey || suppliedKey !== configuredKey) {
+      return res.status(403).json({ error: "Invalid or missing admin key." });
+    }
+
+    try {
+      const { coverImage, refetchPlaceholder } = req.body;
+
+      let nextCoverImage: string;
+      if (refetchPlaceholder === true) {
+        const book = await bookRepository.getById(req.params.id);
+        if (!book) return res.status(404).json({ error: "Book not found." });
+        nextCoverImage = placeholderCoverUrl(req, book.title, book.author);
+      } else if (typeof coverImage === "string" && coverImage.trim().length > 0) {
+        nextCoverImage = coverImage.trim();
+      } else {
+        return res.status(400).json({
+          error: "Provide a non-empty coverImage URL, or refetchPlaceholder: true.",
+        });
+      }
+
+      const updatedBook = await bookRepository.updateBookCover(req.params.id, nextCoverImage);
+      // For non-writable providers (openlibrary, standardebooks) updatedBook
+      // is null — same convention as /level and /status: the client applies
+      // the change in local state and this still reports success, along
+      // with the resolved coverImage so the client knows what to show.
+      return res.json({
+        persisted: !!updatedBook,
+        book: updatedBook ?? null,
+        coverImage: nextCoverImage,
+      });
+    } catch (err: any) {
+      console.error("Cover override error:", err);
+      return res.status(500).json({ error: err?.message || "Failed to update cover." });
+    }
+  });
+
   // Persist a generated illustration for one page so it survives a server
   // restart. Only writable providers (currently: public-domain) actually
   // save anything — for other sources this confirms the image is fine to

@@ -62,4 +62,14 @@ export interface BookProvider {
     id: string,
     status: "approved" | "rejected"
   ): Promise<Book | null>;
+  /**
+   * Replace a book's cover image (Section 6.1 "Admin" — manual re-fetch/
+   * replace). Optional — only writable providers (currently: public-domain)
+   * implement this. Returns the updated book, or null if this provider
+   * doesn't own it.
+   */
+  updateBookCover?(
+    id: string,
+    coverImage: string
+  ): Promise<Book | null>;
 }
