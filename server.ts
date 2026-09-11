@@ -4,6 +4,7 @@ import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import cors from "cors";
 import helmet from "helmet";
+import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { bookRepository } from "./server/books";
@@ -11,6 +12,9 @@ import { importTextBook } from "./server/books/importer";
 import { isDbHealthy } from "./db/client.js";
 import { discoverImportOpenLibraryWork, DiscoveryImportError } from "./server/books/openLibraryImport";
 import { getOrCreateDefaultChildId, getProgress, recordPageRead, unlockBadge as unlockBadgeInDb } from "./server/progress/repository.js";
+import authRoutes from "./server/auth/routes.js";
+import childRoutes from "./server/auth/childRoutes.js";
+import { loadSession } from "./server/auth/middleware.js";
 
 dotenv.config();
 
@@ -65,6 +69,15 @@ function getGeminiClient(): GoogleGenAI | null {
 async function startServer() {
   const app = express();
 
+  // Railway sits in front of this app as a reverse proxy, so incoming
+  // requests always carry X-Forwarded-For. Without telling Express to
+  // trust it, express-rate-limit can't safely use it to key requests by
+  // real client IP (see ERR_ERL_UNEXPECTED_X_FORWARDED_FOR) — every
+  // request would otherwise risk being bucketed under Railway's edge IP
+  // instead of the actual visitor, which also weakens our own
+  // per-IP login/reset rate limiting in server/auth/routes.ts.
+  app.set("trust proxy", 1);
+
   // ── Security & infrastructure middleware ────────────────────────────────────
   app.use(helmet({
     contentSecurityPolicy: NODE_ENV === "production" ? {
@@ -94,6 +107,14 @@ async function startServer() {
     message: { error: "Too many requests. Please slow down." },
   }));
 
+  // ── Auth (Sprint B) ──────────────────────────────────────────────────────────
+  // express.json() must be registered before these routes — they read req.body.
+  app.use(express.json({ limit: "1mb" }));
+  app.use(cookieParser());
+  app.use(loadSession); // makes req.session available on every request
+  app.use("/api/auth", authRoutes);
+  app.use("/api/children", childRoutes);
+
   const aiRateLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 15,
@@ -109,8 +130,6 @@ async function startServer() {
     legacyHeaders: false,
     message: { error: "Image generation rate limit reached. Please wait before generating more illustrations." },
   });
-
-  app.use(express.json({ limit: "1mb" }));
 
   // ── Health check ─────────────────────────────────────────────────────────────
   app.get("/api/health", async (_req: Request, res: Response) => {
