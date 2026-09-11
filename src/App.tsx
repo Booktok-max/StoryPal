@@ -12,6 +12,7 @@ import { BookShelf } from "./components/BookShelf";
 import { StoryReader } from "./components/StoryReader";
 import { ReadingBuddyChat } from "./components/ReadingBuddyChat";
 import { ProgressDashboard } from "./components/ProgressDashboard";
+import { ParentalDashboard } from "./components/ParentalDashboard";
 import { StoryCreatorModal } from "./components/StoryCreatorModal";
 import { OfflineBanner } from "./components/OfflineBanner";
 import { PhonicsWordInfo } from "./utils/phonics";
@@ -62,7 +63,7 @@ export default function App() {
 
   const [selectedBook, setSelectedBook] = useState<Book | null>(INITIAL_BOOKS[0]);
   const [currentPageIndex, setCurrentPageIndex] = useState<number>(0);
-  const [activeView, setActiveView] = useState<"shelf" | "reader" | "passport">("shelf");
+  const [activeView, setActiveView] = useState<"shelf" | "reader" | "passport" | "parent">("shelf");
 
   const [progress, setProgress] = useState<UserProgress>(() => {
     if (typeof window !== "undefined") {
@@ -465,6 +466,14 @@ export default function App() {
             onBackToShelf={() => setActiveView("shelf")}
             onSelectBook={handleSelectBook}
             onUpdateDailyGoal={handleUpdateDailyGoal}
+          />
+        )}
+
+        {activeView === "parent" && (
+          <ParentalDashboard
+            progress={progress}
+            books={books}
+            onBackToShelf={() => setActiveView("shelf")}
           />
         )}
       </main>

@@ -9,13 +9,16 @@ import {
   Volume2,
   Type,
   Check,
+  Users,
 } from "lucide-react";
 import { UserProgress, ReaderSettings, BuddyRole } from "../types";
 
+const ADMIN_MODE = import.meta.env.VITE_ADMIN_MODE === "true";
+
 interface NavbarProps {
   progress: UserProgress;
-  activeView: "shelf" | "reader" | "passport";
-  setActiveView: (view: "shelf" | "reader" | "passport") => void;
+  activeView: "shelf" | "reader" | "passport" | "parent";
+  setActiveView: (view: "shelf" | "reader" | "passport" | "parent") => void;
   isChatOpen: boolean;
   setIsChatOpen: (open: boolean) => void;
   buddyRole: BuddyRole;
@@ -136,6 +139,23 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Sparkles className="w-4 h-4 text-amber-500 fill-amber-400" />
             <span>{progress.totalStars} Stars</span>
           </button>
+
+          {/* Parent View entry point — hidden from children by default */}
+          {ADMIN_MODE && (
+            <button
+              id="parent-view-btn"
+              onClick={() => setActiveView("parent")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                activeView === "parent"
+                  ? "bg-stone-800 text-white border-stone-900 shadow-md"
+                  : "bg-white text-stone-700 border-stone-200 hover:bg-stone-50"
+              }`}
+              title="Parent Dashboard: reading history, time, and words explored"
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Parent View</span>
+            </button>
+          )}
 
           {/* Reading Buddy toggle */}
           <button

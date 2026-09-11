@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { Flame, Target, Trophy, Sparkles, Calendar, BookOpen, Clock } from "lucide-react";
 import { DailyReadingActivity } from "../types";
-import { DAILY_GOAL_PAGES_DEFAULT } from "../utils/readingHabits";
+import { DAILY_GOAL_PAGES_DEFAULT, localDateStr } from "../utils/readingHabits";
 
 interface ReadingHabitsChartProps {
   activity: DailyReadingActivity[];
@@ -87,7 +87,7 @@ export const ReadingHabitsChart: React.FC<ReadingHabitsChartProps> = ({
 }) => {
   const [metric, setMetric] = useState<"pages" | "minutes">("pages");
 
-  const todayStr = new Date().toISOString().split("T")[0];
+  const todayStr = localDateStr();
 
   const totalPagesLast7 = activity.reduce((sum, d) => sum + d.pages, 0);
   const totalMinutesLast7 = activity.reduce((sum, d) => sum + d.minutes, 0);

@@ -3,6 +3,17 @@ import { DailyReadingActivity } from "../types";
 export const DAILY_GOAL_PAGES_DEFAULT = 3;
 
 /**
+ * Returns today's date as YYYY-MM-DD using the client's local calendar day,
+ * not UTC. `Date().toISOString()` is always UTC, which credits reading done
+ * late at night (in timezones ahead of UTC) to the wrong day and breaks
+ * streaks. Use this everywhere a "today" or "which day is this" comparison
+ * is needed.
+ */
+export function localDateStr(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
  * Returns an array of the last 7 days (including today) in chronological order
  */
 export function getLast7DaysLabels(): Array<{ date: string; dayLabel: string; isToday: boolean }> {
@@ -12,7 +23,7 @@ export function getLast7DaysLabels(): Array<{ date: string; dayLabel: string; is
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(today.getDate() - i);
-    const dateStr = d.toISOString().split("T")[0];
+    const dateStr = localDateStr(d);
     const dayLabel = d.toLocaleDateString("en-US", { weekday: "short" }); // "Mon", "Tue"
     days.push({
       date: dateStr,
@@ -86,7 +97,7 @@ export function recordPageReadActivity(
   pagesReadCount: number = 1
 ): DailyReadingActivity[] {
   const reconciled = reconcile7DayActivity(activity);
-  const todayStr = new Date().toISOString().split("T")[0];
+  const todayStr = localDateStr();
 
   return reconciled.map((item) => {
     if (item.date === todayStr) {
@@ -110,7 +121,7 @@ export function getTodayReadingActivity(
   activity: DailyReadingActivity[] = []
 ): DailyReadingActivity {
   const reconciled = reconcile7DayActivity(activity);
-  const todayStr = new Date().toISOString().split("T")[0];
+  const todayStr = localDateStr();
   return (
     reconciled.find((d) => d.date === todayStr) || {
       date: todayStr,
