@@ -9,6 +9,7 @@ import { GoogleGenAI, Modality } from "@google/genai";
 import { bookRepository } from "./server/books";
 import { importTextBook } from "./server/books/importer";
 import { isDbHealthy } from "./db/client.js";
+import { discoverImportOpenLibraryWork, DiscoveryImportError } from "./server/books/openLibraryImport";
 
 dotenv.config();
 
@@ -198,7 +199,24 @@ async function startServer() {
       return res.status(400).json({ error: err?.message || "Failed to import book." });
     }
   });
+import { discoverImportOpenLibraryWork, DiscoveryImportError } from "./server/books/openLibraryImport";
 
+app.post("/api/books/discover-import", aiRateLimiter, async (req, res): Promise<any> => {
+  try {
+    const { workId, title, author, summary, subjects, coverImage, sourceUrl } = req.body;
+    if (!workId || !title || !author)
+      return res.status(400).json({ error: "workId, title and author are required." });
+
+    const book = await discoverImportOpenLibraryWork({ workId, title, author, summary, subjects, coverImage, sourceUrl });
+    return res.status(201).json({ book });
+  } catch (err: any) {
+    if (err instanceof DiscoveryImportError && err.code === "not-available")
+      return res.status(422).json({ error: err.message });
+    console.error("Discover import error:", err);
+    return res.status(500).json({ error: err?.message || "Failed to import book." });
+  }
+});
+  
   app.get("/api/books/:id", async (req: Request, res: Response): Promise<any> => {
     try {
       const book = await bookRepository.getById(req.params.id);
