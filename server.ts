@@ -10,6 +10,7 @@ import { bookRepository } from "./server/books";
 import { importTextBook } from "./server/books/importer";
 import { isDbHealthy } from "./db/client.js";
 import { discoverImportOpenLibraryWork, DiscoveryImportError } from "./server/books/openLibraryImport";
+import { getOrCreateDefaultChildId, getProgress, recordPageRead, unlockBadge as unlockBadgeInDb } from "./server/progress/repository.js";
 
 dotenv.config();
 
@@ -199,24 +200,27 @@ async function startServer() {
       return res.status(400).json({ error: err?.message || "Failed to import book." });
     }
   });
-import { discoverImportOpenLibraryWork, DiscoveryImportError } from "./server/books/openLibraryImport";
 
-app.post("/api/books/discover-import", aiRateLimiter, async (req, res): Promise<any> => {
-  try {
-    const { workId, title, author, summary, subjects, coverImage, sourceUrl } = req.body;
-    if (!workId || !title || !author)
-      return res.status(400).json({ error: "workId, title and author are required." });
+  // Public discover-import: a child/parent browsing Open Library search
+  // results clicks "Add to My Library". No admin key — rate-limited instead.
+  app.post("/api/books/discover-import", aiRateLimiter, async (req: Request, res: Response): Promise<any> => {
+    try {
+      const { workId, title, author, summary, subjects, coverImage, sourceUrl } = req.body;
+      if (!workId || !title || !author) {
+        return res.status(400).json({ error: "workId, title and author are required." });
+      }
 
-    const book = await discoverImportOpenLibraryWork({ workId, title, author, summary, subjects, coverImage, sourceUrl });
-    return res.status(201).json({ book });
-  } catch (err: any) {
-    if (err instanceof DiscoveryImportError && err.code === "not-available")
-      return res.status(422).json({ error: err.message });
-    console.error("Discover import error:", err);
-    return res.status(500).json({ error: err?.message || "Failed to import book." });
-  }
-});
-  
+      const book = await discoverImportOpenLibraryWork({ workId, title, author, summary, subjects, coverImage, sourceUrl });
+      return res.status(201).json({ book });
+    } catch (err: any) {
+      if (err instanceof DiscoveryImportError && err.code === "not-available") {
+        return res.status(422).json({ error: err.message });
+      }
+      console.error("Discover import error:", err);
+      return res.status(500).json({ error: err?.message || "Failed to import book." });
+    }
+  });
+
   app.get("/api/books/:id", async (req: Request, res: Response): Promise<any> => {
     try {
       const book = await bookRepository.getById(req.params.id);
@@ -302,6 +306,64 @@ app.post("/api/books/discover-import", aiRateLimiter, async (req, res): Promise<
     } catch (err: any) {
       console.error("Illustration persistence error:", err);
       return res.status(500).json({ error: err?.message || "Failed to save illustration." });
+    }
+  });
+
+  // ── Progress persistence (Sprint 5, issue 02) ───────────────────────────────
+  // No auth yet, so the client works against a single auto-provisioned
+  // "default" child profile. localStorage stays the fast optimistic cache;
+  // the DB is the source of truth once it's reachable.
+
+  app.get("/api/child/default", async (_req: Request, res: Response): Promise<any> => {
+    try {
+      const childId = await getOrCreateDefaultChildId();
+      return res.json({ childId });
+    } catch (err: any) {
+      console.error("Default child lookup error:", err);
+      return res.status(503).json({ error: err?.message || "Database unavailable." });
+    }
+  });
+
+  app.get("/api/progress/:childId", async (req: Request, res: Response): Promise<any> => {
+    try {
+      const progress = await getProgress(req.params.childId);
+      return res.json({ progress });
+    } catch (err: any) {
+      console.error("Progress fetch error:", err);
+      return res.status(503).json({ error: err?.message || "Failed to load progress." });
+    }
+  });
+
+  app.patch("/api/progress/:childId/page", async (req: Request, res: Response): Promise<any> => {
+    try {
+      const { bookId, pageNumber, starsEarned, totalPages } = req.body;
+      if (typeof bookId !== "string" || !bookId) {
+        return res.status(400).json({ error: "bookId is required." });
+      }
+      if (typeof pageNumber !== "number" || pageNumber < 1) {
+        return res.status(400).json({ error: "A valid pageNumber is required." });
+      }
+      const stars = typeof starsEarned === "number" ? starsEarned : 1;
+
+      await recordPageRead(req.params.childId, bookId, pageNumber, stars, typeof totalPages === "number" ? totalPages : undefined);
+      return res.json({ persisted: true });
+    } catch (err: any) {
+      console.error("Page-read persistence error:", err);
+      return res.status(503).json({ error: err?.message || "Failed to save reading progress." });
+    }
+  });
+
+  app.post("/api/progress/:childId/badge", async (req: Request, res: Response): Promise<any> => {
+    try {
+      const { badgeId, badgeName, icon } = req.body;
+      if (typeof badgeId !== "string" || !badgeId) {
+        return res.status(400).json({ error: "badgeId is required." });
+      }
+      await unlockBadgeInDb(req.params.childId, badgeId, badgeName || badgeId, icon || "🏅");
+      return res.json({ persisted: true });
+    } catch (err: any) {
+      console.error("Badge persistence error:", err);
+      return res.status(503).json({ error: err?.message || "Failed to save badge." });
     }
   });
 
