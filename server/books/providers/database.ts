@@ -4,6 +4,7 @@ import { books, bookPages } from "../../../db/schema/books";
 import { bookSources } from "../../../db/schema/providers";
 import type { Book, BookPage } from "../../../src/types";
 import type { BookProvider, BookSearchQuery, BookSearchResult } from "../types";
+import { saveIllustration, loadPrimaryIllustrations } from "../illustrations/repository";
 
 
 // Maps the DB's short-form level enum to the full display string the
@@ -15,13 +16,15 @@ const LEVEL_DISPLAY: Record<string, Book["level"]> = {
   "Level 3": "Level 3 (Confident)",
 };
 
-function toBookPage(row: typeof bookPages.$inferSelect): BookPage {
+function toBookPage(row: typeof bookPages.$inferSelect, illustration?: { currentImageUrl: string; imageSize: string }): BookPage {
   return {
     pageNumber: row.pageNumber,
     text: row.text,
     illustrationPrompt: row.illustrationPrompt ?? "",
     keyWords: row.keywords ? (JSON.parse(row.keywords) as string[]) : [],
     phonicsFocus: row.phonicsFocus ?? undefined,
+    currentImageUrl: illustration?.currentImageUrl,
+    imageSize: illustration?.imageSize as BookPage["imageSize"],
   };
 }
 
@@ -32,6 +35,8 @@ async function loadBook(row: typeof books.$inferSelect): Promise<Book> {
     .from(bookPages)
     .where(eq(bookPages.bookId, row.id))
     .orderBy(asc(bookPages.pageNumber));
+
+  const illustrations = await loadPrimaryIllustrations(pageRows.map((p) => p.id));
 
   const [sourceRow] = await db
     .select()
@@ -48,7 +53,7 @@ async function loadBook(row: typeof books.$inferSelect): Promise<Book> {
     levelShort: (row.level as Book["levelShort"]) ?? "Level 1",
     colorTheme: row.colorTheme ?? "amber",
     summary: row.summary ?? "",
-    pages: pageRows.map(toBookPage),
+    pages: pageRows.map((p) => toBookPage(p, illustrations.get(p.id))),
     category: row.category ?? undefined,
     moral: row.moral ?? undefined,
     language: row.language ?? "en",
@@ -123,13 +128,18 @@ export const databaseProvider: BookProvider = {
     const db = getDb();
     const [row] = await db.select().from(books).where(eq(books.id, id)).limit(1);
     if (!row) return null;
-    // Illustration URLs live on assets/book_page_assets once object storage
-    // is wired (next Sprint C step); until then this is a documented no-op
-    // so callers know the write path exists but isn't durable yet.
-    console.warn(
-      `[database provider] updatePageImage(${id}, page ${pageIndex}) called before ` +
-        `object storage is wired — image not persisted. See Sprint C spec.`
-    );
+
+    // Sprint C.B: actually persists now, via object storage + assets /
+    // book_page_assets — see illustrations/repository.ts. Returns null
+    // (not an error) if STORAGE_* env vars aren't set yet, same contract
+    // as before this existed, so callers don't need to change.
+    const saved = await saveIllustration(id, pageIndex, imageUrl, imageSize);
+    if (!saved) {
+      console.warn(
+        `[database provider] updatePageImage(${id}, page ${pageIndex}): not persisted ` +
+          `(object storage unconfigured, or book/page not found).`
+      );
+    }
     return loadBook(row);
   },
 
