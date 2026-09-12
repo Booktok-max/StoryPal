@@ -43,7 +43,7 @@ async function loadBook(row: typeof books.$inferSelect): Promise<Book> {
     id: row.id,
     title: row.title,
     author: row.author,
-    coverImage: "", // resolved by withGuaranteedCover() in server.ts, same as every other provider
+    coverImage: row.coverUrl ?? "", // falls back to withGuaranteedCover() in server.ts if still empty
     level: row.level ? LEVEL_DISPLAY[row.level] : "Level 1 (Early Reader)",
     levelShort: (row.level as Book["levelShort"]) ?? "Level 1",
     colorTheme: row.colorTheme ?? "amber",

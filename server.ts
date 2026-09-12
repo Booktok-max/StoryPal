@@ -13,6 +13,7 @@ import { importTextBook } from "./server/books/importer";
 import { isDbHealthy } from "./db/client.js";
 import { discoverImportOpenLibraryWork, DiscoveryImportError } from "./server/books/openLibraryImport";
 import { getProgress, recordPageRead, unlockBadge as unlockBadgeInDb } from "./server/progress/repository.js";
+import { listShelf, addToShelf, updateShelfItem, removeFromShelf } from "./server/shelf/repository.js";
 import authRoutes from "./server/auth/routes.js";
 import childRoutes from "./server/auth/childRoutes.js";
 import { loadSession, requireAuth, requireChildContext } from "./server/auth/middleware.js";
@@ -630,6 +631,79 @@ async function startServer() {
     } catch (err: any) {
       console.error("Badge persistence error:", err);
       return res.status(503).json({ error: err?.message || "Failed to save badge." });
+    }
+  });
+
+  // ── Shelf (Sprint C.A) ───────────────────────────────────────────────────────
+  // Same session-scoped pattern as progress above: active child comes from
+  // req.session.activeChildId, never a client-supplied id.
+  app.get("/api/shelf", requireAuth, requireChildContext, async (req: Request, res: Response): Promise<any> => {
+    try {
+      const items = await listShelf(req.session!.activeChildId!);
+      return res.json({ items });
+    } catch (err: any) {
+      console.error("Shelf fetch error:", err);
+      return res.status(503).json({ error: err?.message || "Failed to load shelf." });
+    }
+  });
+
+  app.post("/api/shelf", requireAuth, requireChildContext, async (req: Request, res: Response): Promise<any> => {
+    try {
+      const { bookId } = req.body;
+      if (typeof bookId !== "string" || !bookId) {
+        return res.status(400).json({ error: "bookId is required." });
+      }
+      const result = await addToShelf(req.session!.activeChildId!, bookId);
+      if (!result.ok) {
+        return res.status(409).json({ error: { code: result.error, message: "That book is already on the shelf." } });
+      }
+      return res.status(201).json({ item: result.item });
+    } catch (err: any) {
+      console.error("Shelf add error:", err);
+      return res.status(503).json({ error: err?.message || "Failed to add to shelf." });
+    }
+  });
+
+  app.patch("/api/shelf/:bookId", requireAuth, requireChildContext, async (req: Request, res: Response): Promise<any> => {
+    try {
+      const { bookId } = req.params;
+      const { status, favorite, progressPage } = req.body;
+
+      if (status !== undefined && !["want-to-read", "reading", "finished"].includes(status)) {
+        return res.status(400).json({ error: "Invalid status." });
+      }
+      if (favorite !== undefined && typeof favorite !== "boolean") {
+        return res.status(400).json({ error: "favorite must be a boolean." });
+      }
+      if (progressPage !== undefined && (typeof progressPage !== "number" || progressPage < 0)) {
+        return res.status(400).json({ error: "progressPage must be a non-negative number." });
+      }
+
+      const updated = await updateShelfItem(req.session!.activeChildId!, decodeURIComponent(bookId), {
+        status,
+        favorite,
+        progressPage,
+      });
+      if (!updated) {
+        return res.status(404).json({ error: { code: "NOT_ON_SHELF", message: "That book isn't on this child's shelf." } });
+      }
+      return res.json({ item: updated });
+    } catch (err: any) {
+      console.error("Shelf update error:", err);
+      return res.status(503).json({ error: err?.message || "Failed to update shelf item." });
+    }
+  });
+
+  app.delete("/api/shelf/:bookId", requireAuth, requireChildContext, async (req: Request, res: Response): Promise<any> => {
+    try {
+      const removed = await removeFromShelf(req.session!.activeChildId!, decodeURIComponent(req.params.bookId));
+      if (!removed) {
+        return res.status(404).json({ error: { code: "NOT_ON_SHELF", message: "That book isn't on this child's shelf." } });
+      }
+      return res.json({ removed: true });
+    } catch (err: any) {
+      console.error("Shelf remove error:", err);
+      return res.status(503).json({ error: err?.message || "Failed to remove from shelf." });
     }
   });
 
