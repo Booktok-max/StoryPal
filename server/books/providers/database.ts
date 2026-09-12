@@ -43,7 +43,7 @@ async function loadBook(row: typeof books.$inferSelect): Promise<Book> {
     id: row.id,
     title: row.title,
     author: row.author,
-    coverImage: "", // resolved by withGuaranteedCover() in server.ts, same as every other provider
+    coverImage: row.coverUrl ?? "",
     level: row.level ? LEVEL_DISPLAY[row.level] : "Level 1 (Early Reader)",
     levelShort: (row.level as Book["levelShort"]) ?? "Level 1",
     colorTheme: row.colorTheme ?? "amber",
@@ -149,6 +149,17 @@ export const databaseProvider: BookProvider = {
     const [updated] = await db
       .update(books)
       .set({ status })
+      .where(eq(books.id, id))
+      .returning();
+    if (!updated) return null;
+    return loadBook(updated);
+  },
+
+  async updateBookCover(id, coverImage): Promise<Book | null> {
+    const db = getDb();
+    const [updated] = await db
+      .update(books)
+      .set({ coverUrl: coverImage })
       .where(eq(books.id, id))
       .returning();
     if (!updated) return null;

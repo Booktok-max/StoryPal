@@ -4,9 +4,11 @@ import { publicDomainProvider } from "./providers/publicDomain";
 import { standardEbooksProvider } from "./providers/standardEbooks";
 import { googleBooksProvider } from "./providers/googlebooks";
 import { nytimesProviderInfo } from "./providers/nytimes";
+import { databaseProvider } from "./providers/database";
 import { BookRepository } from "./repository";
 
 export const bookRepository = new BookRepository([
+  ...(process.env.DATABASE_URL ? [databaseProvider] : []),
   builtinProvider,
   publicDomainProvider,
   openLibraryProvider,
@@ -21,4 +23,3 @@ export const bookRepository = new BookRepository([
 export { nytimesProviderInfo };
 export { listBestsellers, NYT_LIST_NAMES, NYT_ATTRIBUTION } from "./providers/nytimes";
 export type { NytListSlug } from "./providers/nytimes";
-

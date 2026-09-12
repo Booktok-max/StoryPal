@@ -20,6 +20,7 @@ export const books = pgTable("books", {
   status: bookStatusEnum("status").notNull().default("approved"),
   aiEnhanced: boolean("ai_enhanced").default(false),
   coverAssetId: uuid("cover_asset_id"),
+  coverUrl: varchar("cover_url", { length: 2000 }),
   colorTheme: varchar("color_theme", { length: 50 }).default("amber"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

@@ -15,6 +15,7 @@ import { discoverImportOpenLibraryWork, DiscoveryImportError } from "./server/bo
 import { getProgress, recordPageRead, unlockBadge as unlockBadgeInDb } from "./server/progress/repository.js";
 import authRoutes from "./server/auth/routes.js";
 import childRoutes from "./server/auth/childRoutes.js";
+import shelfRoutes from "./server/shelf/routes.js";
 import { loadSession, requireAuth, requireChildContext } from "./server/auth/middleware.js";
 
 dotenv.config();
@@ -130,6 +131,7 @@ async function startServer() {
   app.use(loadSession); // makes req.session available on every request
   app.use("/api/auth", authRoutes);
   app.use("/api/children", childRoutes);
+  app.use("/api/shelf", shelfRoutes);
 
   const aiRateLimiter = rateLimit({
     windowMs: 60 * 1000,
@@ -312,18 +314,25 @@ async function startServer() {
   // a durable counter belongs in the Section 29/37 monitoring work.
   let coverFallbackCount = 0;
   let coverResolvedCount = 0;
+  const coverCacheAttempts = new Set<string>();
 
   // Guarantees every book object leaving this API has a resolvable cover
   // (Section 6.1, tiers 1-6): pass through an existing coverImage untouched,
   // otherwise fill in the deterministic placeholder. Never mutates the
   // caller's object.
-  function withGuaranteedCover<T extends { coverImage?: string | null; title?: string; author?: string }>(
+  function withGuaranteedCover<T extends { id: string; coverImage?: string | null; title?: string; author?: string }>(
     req: Request,
     book: T
   ): T & { coverImage: string; coverIsPlaceholder: boolean } {
     coverResolvedCount++;
     const hasCover = typeof book.coverImage === "string" && book.coverImage.trim().length > 0;
     if (hasCover) {
+      if (!coverCacheAttempts.has(book.id)) {
+        coverCacheAttempts.add(book.id);
+        void bookRepository.updateBookCover(book.id, book.coverImage as string).catch((error) => {
+          console.warn(`[covers] Could not persist cover for ${book.id}:`, error);
+        });
+      }
       return { ...book, coverImage: book.coverImage as string, coverIsPlaceholder: false };
     }
     coverFallbackCount++;

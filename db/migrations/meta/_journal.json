@@ -22,6 +22,13 @@
       "when": 1789200000000,
       "tag": "0002_auth_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789230000000,
+      "tag": "0004_durable_storage",
+      "breakpoints": true
     }
   ]
 }

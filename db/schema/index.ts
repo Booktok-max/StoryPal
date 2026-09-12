@@ -12,3 +12,4 @@ export * from "./achievements";
 export * from "./stories";
 export * from "./chat";
 export * from "./moderation";
+export * from "./shelf";

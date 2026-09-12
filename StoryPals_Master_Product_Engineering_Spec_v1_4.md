@@ -632,13 +632,20 @@ Sprint H.1: New Discovery Providers — COMPLETE (deployed)
 [ ] Cross-provider ISBN-based de-duplication (dedupeBooks() still
     title+author only)
 
-Sprint C: Durable Storage — NEXT
+Sprint C: Durable Storage — IN PROGRESS
+
+Phase C-A (minimal durable foundation; current implementation)
+[x] Shelf schema exported and API backed by PostgreSQL
+[x] Cover URL column and provider write path
+[x] Migration for the C-A tables and cover cache
+[ ] Deploy migration and smoke-test shelf persistence
+
+Phase C-B (full storage architecture; remains on the horizon)
 [ ] PostgreSQL as source of truth for book content
 [ ] Book/chapter schema used for all providers
-[ ] Shelf schema
 [ ] Import jobs table
-[ ] Object storage bucket (Railway or Cloudflare R2)
-[ ] Book cover caching (tiers 1-5 from Section 6.1)
+[ ] Object storage bucket (Cloudflare R2 preferred)
+[ ] Book cover caching tiers 1-5 from Section 6.1
 [ ] Image storage for story illustrations (not book covers)
 [ ] Uploaded files storage
 [ ] Backups
