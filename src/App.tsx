@@ -532,6 +532,32 @@ function AppShell({ activeChildId, activeChildName, onSwitchProfile }: AppShellP
 export default function App() {
   const auth = useAuth();
 
+  // One-time confirmation toast for GET /api/auth/verify-email?token=...
+  // redirects (?verified=1|0). No dedicated screen — see spec 4.1 step 5.
+  const [verifiedToast, setVerifiedToast] = useState<"success" | "failure" | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const verified = params.get("verified");
+    if (verified === "1" || verified === "0") {
+      setVerifiedToast(verified === "1" ? "success" : "failure");
+      params.delete("verified");
+      const rest = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (rest ? `?${rest}` : ""));
+      const timer = setTimeout(() => setVerifiedToast(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  const verifiedToastNode = verifiedToast && (
+    <div
+      className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 rounded-xl px-4 py-2.5 text-sm font-medium shadow-lg ${
+        verifiedToast === "success" ? "bg-emerald-500 text-white" : "bg-red-500 text-white"
+      }`}
+    >
+      {verifiedToast === "success" ? "Email verified! ✓" : "That verification link is invalid or expired."}
+    </div>
+  );
+
   if (auth.status === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#fdfbf7]">
@@ -551,6 +577,7 @@ export default function App() {
         onSelect={auth.selectChild}
         onAdd={auth.addChild}
         onLogout={auth.logout}
+        emailVerified={auth.me.emailVerified}
       />
     );
   }

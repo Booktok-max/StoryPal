@@ -1,12 +1,14 @@
 import React, { useState } from "react";
 import { Sparkles, Loader2, Plus, LogOut } from "lucide-react";
 import type { ChildSummary } from "../api/client";
+import { VerifyEmailBanner } from "./VerifyEmailBanner";
 
 interface ChildGateProps {
   childProfiles: ChildSummary[];
   onSelect: (childId: string) => Promise<void>;
   onAdd: (params: { displayName: string; ageBand?: "4-5" | "6-7" | "8-9"; buddyRole?: "owl" | "dragon" }) => Promise<void>;
   onLogout: () => Promise<void>;
+  emailVerified?: boolean;
 }
 
 const AGE_BANDS: Array<{ value: "4-5" | "6-7" | "8-9"; label: string }> = [
@@ -15,7 +17,7 @@ const AGE_BANDS: Array<{ value: "4-5" | "6-7" | "8-9"; label: string }> = [
   { value: "8-9", label: "8–9 years" },
 ];
 
-export const ChildGate: React.FC<ChildGateProps> = ({ childProfiles, onSelect, onAdd, onLogout }) => {
+export const ChildGate: React.FC<ChildGateProps> = ({ childProfiles, onSelect, onAdd, onLogout, emailVerified = true }) => {
   const [isAdding, setIsAdding] = useState(childProfiles.length === 0);
   const [displayName, setDisplayName] = useState("");
   const [ageBand, setAgeBand] = useState<"4-5" | "6-7" | "8-9">("6-7");
@@ -53,6 +55,7 @@ export const ChildGate: React.FC<ChildGateProps> = ({ childProfiles, onSelect, o
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-50 to-amber-50 flex items-center justify-center px-4">
       <div className="w-full max-w-lg bg-white rounded-3xl shadow-xl border-4 border-sky-200 p-8">
+        {!emailVerified && <VerifyEmailBanner />}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
             <Sparkles className="w-6 h-6 text-sky-500" />

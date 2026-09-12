@@ -168,6 +168,7 @@ export interface MeResponse {
   displayName: string;
   role: string;
   activeChildId: string | null;
+  emailVerified: boolean;
   children: ChildSummary[];
 }
 
@@ -219,6 +220,11 @@ export async function logoutAccount(): Promise<{ ok: true }> {
  */
 export async function fetchMe(): Promise<MeResponse> {
   return authFetch("/api/auth/me");
+}
+
+/** Re-send the sign-up verification email for the logged-in parent. Rate-limited. */
+export async function resendVerificationEmail(): Promise<{ ok: true; message: string }> {
+  return authFetch("/api/auth/resend-verification", { method: "POST" });
 }
 
 /** Switch the active child for this session (or pass null for parent context). */

@@ -10,6 +10,8 @@ export const users = pgTable("users", {
   displayName: varchar("display_name", { length: 100 }).notNull(),
   role: userRoleEnum("role").notNull().default("parent"),
   status: userStatusEnum("status").notNull().default("active"),
+  /** Null until the registrant confirms ownership of this address (Sprint B.1). */
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

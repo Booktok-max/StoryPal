@@ -5,6 +5,7 @@ import {
   userPasswords,
   sessions,
   passwordResetTokens,
+  emailVerificationTokens,
   rateLimitAttempts,
 } from "../../db/schema/auth.js";
 import { childProfiles } from "../../db/schema/childProfiles.js";
@@ -24,10 +25,13 @@ const db = new Proxy(
 
 const SESSION_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 const RESET_TTL_MS = 60 * 60 * 1000;              // 1 hour
+const EMAIL_VERIFY_TTL_MS = 24 * 60 * 60 * 1000;  // 24 hours — not security-sensitive, longer than reset
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;           // 15 minutes
 const LOGIN_MAX_ATTEMPTS = 10;
 const RESET_WINDOW_MS = 60 * 60 * 1000;
 const RESET_MAX_ATTEMPTS = 3;
+const VERIFY_RESEND_WINDOW_MS = 60 * 60 * 1000;
+const VERIFY_RESEND_MAX_ATTEMPTS = 3;
 
 // ── Bcrypt shim ───────────────────────────────────────────────────────────────
 // Dynamic import so TypeScript compiles without requiring bcrypt in devDeps.
@@ -101,7 +105,7 @@ export interface RegisterInput {
 }
 
 export type RegisterResult =
-  | { ok: true; userId: string }
+  | { ok: true; userId: string; verificationToken: string }
   | { ok: false; error: "EMAIL_TAKEN" | "WEAK_PASSWORD" };
 
 export async function registerUser(input: RegisterInput): Promise<RegisterResult> {
@@ -134,7 +138,12 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
     return inserted;
   });
 
-  return { ok: true, userId: user.id };
+  // After the account exists: issue a verification token. Nudge model (see
+  // spec 4.1) — the account is fully usable immediately regardless of this
+  // token being emailed successfully or not.
+  const verificationToken = await generateEmailVerificationToken(user.id);
+
+  return { ok: true, userId: user.id, verificationToken };
 }
 
 // ── Login ─────────────────────────────────────────────────────────────────────
@@ -204,6 +213,7 @@ export interface ResolvedSession {
   userDisplayName: string;
   userRole: string;
   activeChildId: string | null;
+  emailVerifiedAt: Date | null;
 }
 
 export async function resolveSession(token: string): Promise<ResolvedSession | null> {
@@ -218,6 +228,7 @@ export async function resolveSession(token: string): Promise<ResolvedSession | n
       displayName: users.displayName,
       role: users.role,
       status: users.status,
+      emailVerifiedAt: users.emailVerifiedAt,
     })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
@@ -233,6 +244,7 @@ export async function resolveSession(token: string): Promise<ResolvedSession | n
     userDisplayName: row.displayName,
     userRole: row.role,
     activeChildId: row.activeChildId,
+    emailVerifiedAt: row.emailVerifiedAt,
   };
 }
 
@@ -338,6 +350,65 @@ export async function consumePasswordReset(
   await logoutAllSessions(row.userId);
 
   return { ok: true };
+}
+
+// ── Email verification ────────────────────────────────────────────────────────
+// Mirrors requestPasswordReset/consumePasswordReset shape and TTL pattern
+// (24h TTL instead of 1h — see EMAIL_VERIFY_TTL_MS — since this isn't a
+// security-sensitive action).
+
+export async function generateEmailVerificationToken(userId: string): Promise<string> {
+  const token = generateToken(32);
+  const expiresAt = new Date(Date.now() + EMAIL_VERIFY_TTL_MS);
+  await db.insert(emailVerificationTokens).values({ userId, token, expiresAt });
+  return token;
+}
+
+export type VerifyEmailResult =
+  | { ok: true }
+  | { ok: false; error: "INVALID_TOKEN" | "EXPIRED" };
+
+export async function verifyEmailToken(token: string): Promise<VerifyEmailResult> {
+  const [row] = await db
+    .select()
+    .from(emailVerificationTokens)
+    .where(eq(emailVerificationTokens.token, token));
+
+  if (!row) return { ok: false, error: "INVALID_TOKEN" };
+  if (row.usedAt) return { ok: false, error: "INVALID_TOKEN" };
+  if (row.expiresAt < new Date()) return { ok: false, error: "EXPIRED" };
+
+  await db
+    .update(users)
+    .set({ emailVerifiedAt: new Date() })
+    .where(eq(users.id, row.userId));
+
+  await db
+    .update(emailVerificationTokens)
+    .set({ usedAt: new Date() })
+    .where(eq(emailVerificationTokens.id, row.id));
+
+  return { ok: true };
+}
+
+export type ResendVerificationResult =
+  | { ok: true; token: string }
+  | { ok: false; error: "RATE_LIMITED" | "ALREADY_VERIFIED" | "NOT_FOUND" };
+
+export async function resendVerificationEmail(userId: string): Promise<ResendVerificationResult> {
+  const rateKey = `user:${userId}`;
+  const attempts = await countRecentAttempts(rateKey, "verify-resend", VERIFY_RESEND_WINDOW_MS);
+  if (attempts >= VERIFY_RESEND_MAX_ATTEMPTS) {
+    return { ok: false, error: "RATE_LIMITED" };
+  }
+  await recordAttempt(rateKey, "verify-resend");
+
+  const user = await findUserById(userId);
+  if (!user) return { ok: false, error: "NOT_FOUND" };
+  if (user.emailVerifiedAt) return { ok: false, error: "ALREADY_VERIFIED" };
+
+  const token = await generateEmailVerificationToken(userId);
+  return { ok: true, token };
 }
 
 // ── Account deletion ──────────────────────────────────────────────────────────

@@ -36,6 +36,13 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawn, type ChildProcess } from "node:child_process";
 
 const TEST_DB_URL = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
+// db/client.ts reads DATABASE_URL at import time, and this file's own DB
+// queries (for the email-verification test below) share that same env var
+// rather than a separate connection config — mirror it onto DATABASE_URL so
+// `getDb()` connects to the same disposable test database as TEST_DB_URL.
+if (TEST_DB_URL && !process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = TEST_DB_URL;
+}
 const PORT = process.env.TEST_SERVER_PORT || "3998";
 const BASE = `http://localhost:${PORT}`;
 const SESSION_COOKIE = "sp_session";
@@ -154,6 +161,53 @@ suite("auth -> child -> progress integration", () => {
     expect(body.email).toBe(emailA);
     expect(body.activeChildId).toBeNull();
     expect(body.children).toEqual([]);
+  });
+
+  it("issues a verification token on registration, consumes it via the verify link, then rejects reuse", async () => {
+    // This suite is otherwise deliberately black-box (see file header), but
+    // the verification token is only ever logged server-side or emailed —
+    // never returned in an HTTP response, by design (see server/auth/email.ts).
+    // Reading it straight from the same disposable test database, alongside
+    // the spawned server, is the only way to drive this flow end-to-end.
+    const emailC = `test-c-${Date.now()}@storypals-test.local`;
+    const cookieC = await registerAndLogin(emailC, "Test Parent C");
+
+    const meBefore = await (await fetch(`${BASE}/api/auth/me`, { headers: { Cookie: cookieC } })).json();
+    expect(meBefore.emailVerified).toBe(false);
+
+    const { getDb } = await import("../db/client.js");
+    const { users, emailVerificationTokens } = await import("../db/schema/index.js");
+    const { eq } = await import("drizzle-orm");
+    const db = getDb();
+
+    const [user] = await db.select().from(users).where(eq(users.email, emailC));
+    expect(user?.id).toBeTruthy();
+
+    const [tokenRow] = await db
+      .select()
+      .from(emailVerificationTokens)
+      .where(eq(emailVerificationTokens.userId, user.id));
+    expect(tokenRow?.token).toBeTruthy();
+
+    const verify = await fetch(`${BASE}/api/auth/verify-email?token=${tokenRow.token}`, { redirect: "manual" });
+    expect(verify.status).toBeGreaterThanOrEqual(300);
+    expect(verify.status).toBeLessThan(400);
+    expect(verify.headers.get("location")).toContain("verified=1");
+
+    const meAfter = await (await fetch(`${BASE}/api/auth/me`, { headers: { Cookie: cookieC } })).json();
+    expect(meAfter.emailVerified).toBe(true);
+
+    // Re-consuming the same (now-used) token must fail — mirrors the
+    // password-reset token's INVALID_TOKEN-on-reuse behavior.
+    const reconsume = await fetch(`${BASE}/api/auth/verify-email?token=${tokenRow.token}`, { redirect: "manual" });
+    expect(reconsume.headers.get("location")).toContain("verified=0");
+
+    // Cleanup: this test creates its own account outside cookieA/cookieB.
+    await fetch(`${BASE}/api/auth/account`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", Cookie: cookieC },
+      body: JSON.stringify({ password: PASSWORD }),
+    }).catch(() => {});
   });
 
   it("blocks progress access until a child is selected, then completes the full flow", async () => {

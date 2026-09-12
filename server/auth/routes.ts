@@ -27,7 +27,10 @@ import {
   deleteAccount,
   findUserById,
   getChildrenForParent,
+  verifyEmailToken,
+  resendVerificationEmail,
 } from "./repository.js";
+import { sendVerificationEmail, sendPasswordResetEmail } from "./email.js";
 import {
   loadSession,
   requireAuth,
@@ -91,6 +94,12 @@ router.post("/register", asyncHandler(async (req: Request, res: Response): Promi
     return res.status(status).json({ error: { code: result.error, message: result.error === "EMAIL_TAKEN" ? "That email is already registered." : "Password must be at least 8 characters." } });
   }
 
+  // Nudge model: the account is usable immediately regardless of whether
+  // this send succeeds — don't block/fail registration on it.
+  sendVerificationEmail(email, result.verificationToken).catch((err) =>
+    console.error("[auth] Failed to send verification email:", err),
+  );
+
   return res.status(201).json({ userId: result.userId });
 }));
 
@@ -132,6 +141,7 @@ router.get("/me", requireAuth, asyncHandler(async (req: Request, res: Response):
     displayName: session.userDisplayName,
     role: session.userRole,
     activeChildId: session.activeChildId,
+    emailVerified: session.emailVerifiedAt !== null,
     children: children.map((c) => ({
       id: c.id,
       displayName: c.displayName,
@@ -186,13 +196,43 @@ router.post("/password-reset/request", asyncHandler(async (req: Request, res: Re
   }
 
   // Always respond 200 to avoid email enumeration.
-  // In production: email result.token via your transactional mail provider.
-  // Log it for now so dev can test without SMTP.
   if (result.ok) {
-    console.log(`[auth] Password reset token for ${email}: ${result.token}`);
+    await sendPasswordResetEmail(email, result.token);
   }
 
   return res.json({ ok: true, message: "If that email exists, a reset link has been sent." });
+}));
+
+// ── Email verification ────────────────────────────────────────────────────────
+
+router.get("/verify-email", asyncHandler(async (req: Request, res: Response): Promise<any> => {
+  const token = sanitize(req.query.token, 200);
+  const appUrl = process.env.APP_URL || "";
+
+  if (!token) {
+    return res.redirect(`${appUrl}/?verified=0`);
+  }
+
+  const result = await verifyEmailToken(token);
+  return res.redirect(`${appUrl}/?verified=${result.ok ? "1" : "0"}`);
+}));
+
+router.post("/resend-verification", requireAuth, asyncHandler(async (req: Request, res: Response): Promise<any> => {
+  const session = req.session!;
+  const result = await resendVerificationEmail(session.userId);
+
+  if (!result.ok) {
+    if (result.error === "RATE_LIMITED") {
+      return res.status(429).json({ error: { code: "RATE_LIMITED", message: "Too many verification emails requested. Please wait." } });
+    }
+    if (result.error === "ALREADY_VERIFIED") {
+      return res.json({ ok: true, message: "Your email is already verified." });
+    }
+    return res.status(404).json({ error: { code: "NOT_FOUND" } });
+  }
+
+  await sendVerificationEmail(session.userEmail, result.token);
+  return res.json({ ok: true, message: "Verification email sent." });
 }));
 
 // ── Password reset — confirm ──────────────────────────────────────────────────

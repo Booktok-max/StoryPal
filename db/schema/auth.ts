@@ -56,3 +56,19 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   usedAt: timestamp("used_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * One-time tokens for sign-up email verification (Sprint B.1).
+ * Same shape/TTL pattern as passwordResetTokens, but a longer window since
+ * this isn't a security-sensitive action — see repository.ts EMAIL_VERIFY_TTL_MS.
+ */
+export const emailVerificationTokens = pgTable("email_verification_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  token: varchar("token", { length: 128 }).notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
