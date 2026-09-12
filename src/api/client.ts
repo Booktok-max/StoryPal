@@ -83,6 +83,7 @@ export function hasHealthChecked(): boolean {
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     headers: { "Content-Type": "application/json", ...options?.headers },
+    credentials: "include", // send the sp_session cookie on every request
     ...options,
   });
 
@@ -150,38 +151,118 @@ export async function fetchBook(id: string): Promise<{ book: any }> {
   return apiFetch(`/api/books/${encodeURIComponent(id)}`);
 }
 
+// ── Auth (Sprint B/C: Identity) ──────────────────────────────────────────────
+
+export interface ChildSummary {
+  id: string;
+  displayName: string;
+  ageBand: string | null;
+  readingLevel: string | null;
+  avatarKey: string | null;
+  buddyRole: "owl" | "dragon";
+}
+
+export interface MeResponse {
+  userId: string;
+  email: string;
+  displayName: string;
+  role: string;
+  activeChildId: string | null;
+  children: ChildSummary[];
+}
+
+export interface AuthApiError {
+  error: { code: string; message?: string };
+}
+
+/** Throws with a readable message parsed from the { error: { code, message } } shape. */
+async function authFetch<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    credentials: "include",
+    ...options,
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const err = (data as AuthApiError)?.error;
+    const error = new Error(err?.message || err?.code || `Request failed (${res.status})`);
+    (error as any).code = err?.code;
+    (error as any).status = res.status;
+    throw error;
+  }
+  return data as T;
+}
+
+/** Register a new parent/guardian account. Does not log in automatically. */
+export async function registerAccount(params: {
+  email: string;
+  displayName: string;
+  password: string;
+}): Promise<{ userId: string }> {
+  return authFetch("/api/auth/register", { method: "POST", body: JSON.stringify(params) });
+}
+
+/** Log in and establish the session cookie. */
+export async function loginAccount(params: { email: string; password: string }): Promise<{ ok: true; userId: string }> {
+  return authFetch("/api/auth/login", { method: "POST", body: JSON.stringify(params) });
+}
+
+/** Log out and clear the session cookie. */
+export async function logoutAccount(): Promise<{ ok: true }> {
+  return authFetch("/api/auth/logout", { method: "POST" });
+}
+
+/**
+ * Current session: who's logged in, their children, and which child is
+ * active. Throws (401) if there is no valid session — callers should treat
+ * that as "show the login screen", not as an error to surface.
+ */
+export async function fetchMe(): Promise<MeResponse> {
+  return authFetch("/api/auth/me");
+}
+
+/** Switch the active child for this session (or pass null for parent context). */
+export async function switchActiveChild(childId: string | null): Promise<{ ok: true; activeChildId: string | null }> {
+  return authFetch("/api/auth/switch-child", { method: "POST", body: JSON.stringify({ childId }) });
+}
+
+/** Create a new child profile under the logged-in parent's account. */
+export async function createChildProfile(params: {
+  displayName: string;
+  ageBand?: "4-5" | "6-7" | "8-9";
+  readingLevel?: string;
+  avatarKey?: string;
+  buddyRole?: "owl" | "dragon";
+}): Promise<{ child: ChildSummary }> {
+  return authFetch("/api/children", { method: "POST", body: JSON.stringify(params) });
+}
+
 // ── Progress persistence ────────────────────────────────────────────────────
-// No auth yet, so these work against a single auto-provisioned "default"
-// child profile. localStorage stays the fast optimistic cache; the DB is
-// the source of truth once it's reachable.
+// Session-scoped as of Sprint C: the server reads the active child from
+// req.session.activeChildId (set via switchActiveChild above), so these
+// calls take no childId — a stale/foreign id in the URL can no longer be
+// used to read or write another family's progress.
 
-/** Get (or create) the default child profile's ID. Call once and cache it. */
-export async function fetchDefaultChildId(): Promise<{ childId: string }> {
-  return apiFetch("/api/child/default");
+/** Load full progress for the session's active child from the DB */
+export async function fetchProgress(): Promise<{ progress: any }> {
+  return apiFetch(`/api/progress`);
 }
 
-/** Load full progress for a child from the DB */
-export async function fetchProgress(childId: string): Promise<{ progress: any }> {
-  return apiFetch(`/api/progress/${encodeURIComponent(childId)}`);
-}
-
-/** Record a page read. Fire-and-forget from the caller's perspective. */
+/** Record a page read for the session's active child. Fire-and-forget from the caller's perspective. */
 export async function recordPage(
-  childId: string,
   params: { bookId: string; pageNumber: number; starsEarned?: number; totalPages?: number }
 ): Promise<{ persisted: boolean }> {
-  return apiFetch(`/api/progress/${encodeURIComponent(childId)}/page`, {
+  return apiFetch(`/api/progress/page`, {
     method: "PATCH",
     body: JSON.stringify(params),
   });
 }
 
-/** Unlock a badge server-side. Idempotent — safe to call more than once. */
+/** Unlock a badge server-side for the session's active child. Idempotent — safe to call more than once. */
 export async function unlockBadgeRemote(
-  childId: string,
   params: { badgeId: string; badgeName?: string; icon?: string }
 ): Promise<{ persisted: boolean }> {
-  return apiFetch(`/api/progress/${encodeURIComponent(childId)}/badge`, {
+  return apiFetch(`/api/progress/badge`, {
     method: "POST",
     body: JSON.stringify(params),
   });

@@ -17,14 +17,22 @@ import { StoryCreatorModal } from "./components/StoryCreatorModal";
 import { OfflineBanner } from "./components/OfflineBanner";
 import { PhonicsWordInfo } from "./utils/phonics";
 import { BookDiscoveryModal } from "./components/BookDiscoveryModal";
+import { LoginScreen } from "./components/LoginScreen";
+import { ChildGate } from "./components/ChildGate";
 import { useApiHealth } from "./hooks/useApiHealth";
-import { saveIllustration, fetchDefaultChildId, fetchProgress, recordPage, unlockBadgeRemote } from "./api/client";
+import { useAuth } from "./hooks/useAuth";
+import { saveIllustration, fetchProgress, recordPage, unlockBadgeRemote } from "./api/client";
 
 const STORAGE_KEY_PROGRESS = "storypals_user_progress_v1";
 const STORAGE_KEY_BOOKS = "storypals_custom_books_v1";
-const STORAGE_KEY_CHILD_ID = "storypals_child_id_v1";
 
-export default function App() {
+interface AppShellProps {
+  activeChildId: string;
+  activeChildName: string;
+  onSwitchProfile: () => void;
+}
+
+function AppShell({ activeChildId, activeChildName, onSwitchProfile }: AppShellProps) {
   const { aiAvailable } = useApiHealth();
 
   const [books, setBooks] = useState<Book[]>(INITIAL_BOOKS);
@@ -125,31 +133,19 @@ export default function App() {
     }
   }, [progress]);
 
-  // ── DB-backed progress (Sprint 5, issue 02) ─────────────────────────────────
-  // No auth yet: resolve (or provision) a single default child profile, cache
-  // its ID, then merge DB progress over the localStorage snapshot. DB wins on
-  // conflict; if the DB is unreachable this silently falls back to the
-  // localStorage-only behavior above.
-  // TODO: replace with the session's actual childId once auth exists.
-  const [childId, setChildId] = useState<string | null>(() =>
-    typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY_CHILD_ID) : null
-  );
-
+  // ── DB-backed progress (Sprint C: Identity) ─────────────────────────────────
+  // The active child now comes from the session (via AppShell's props, set by
+  // useAuth/switchActiveChild) rather than an auto-provisioned default or a
+  // client-cached id — the server resolves req.session.activeChildId itself,
+  // so no id needs to be sent from here at all. Merge DB progress over the
+  // localStorage snapshot: DB wins on conflict; if the DB is unreachable this
+  // silently falls back to the localStorage-only behavior above.
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
       try {
-        let id = childId;
-        if (!id) {
-          const { childId: fetchedId } = await fetchDefaultChildId();
-          if (cancelled) return;
-          id = fetchedId;
-          localStorage.setItem(STORAGE_KEY_CHILD_ID, id);
-          setChildId(id);
-        }
-
-        const { progress: dbProgress } = await fetchProgress(id);
+        const { progress: dbProgress } = await fetchProgress();
         if (cancelled || !dbProgress) return;
 
         setProgress((prev) => ({
@@ -168,8 +164,9 @@ export default function App() {
     return () => {
       cancelled = true;
     };
+    // Re-fetch whenever the active child changes (e.g. switching profiles).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activeChildId]);
 
   const [settings, setSettings] = useState<ReaderSettings>({
     fontSize: "large",
@@ -203,11 +200,11 @@ export default function App() {
       confetti({ particleCount: 40, spread: 70, origin: { y: 0.2 } });
       setTimeout(() => setBadgeToast(null), 4000);
 
-      if (childId) {
-        unlockBadgeRemote(childId, { badgeId, badgeName, icon }).catch((e) =>
-          console.warn("Could not persist badge unlock", e)
-        );
-      }
+      // activeChildId is always present here — AppShell only mounts once a
+      // child profile is selected — so this is unconditional (Sprint C).
+      unlockBadgeRemote({ badgeId, badgeName, icon }).catch((e) =>
+        console.warn("Could not persist badge unlock", e)
+      );
     }
   };
 
@@ -265,14 +262,12 @@ export default function App() {
     if (isBookNowCompleted) unlockBadge("book-finisher", "Book Champion", "🏆");
     if (newTotalStars >= 10) unlockBadge("super-streak", "Star Reader", "⭐");
 
-    if (childId) {
-      recordPage(childId, {
-        bookId,
-        pageNumber,
-        starsEarned: 1,
-        totalPages: selectedBook.pages.length,
-      }).catch((e) => console.warn("Could not persist page read", e));
-    }
+    recordPage({
+      bookId,
+      pageNumber,
+      starsEarned: 1,
+      totalPages: selectedBook.pages.length,
+    }).catch((e) => console.warn("Could not persist page read", e));
   };
 
   const handleWordExplored = (wordInfo: PhonicsWordInfo) => {
@@ -428,6 +423,8 @@ export default function App() {
         settings={settings}
         setSettings={setSettings}
         hasActiveBook={!!selectedBook}
+        activeChildName={activeChildName}
+        onSwitchProfile={onSwitchProfile}
       />
 
       <main className="flex-1">
@@ -525,5 +522,47 @@ export default function App() {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Auth gate (Sprint C: Identity) ──────────────────────────────────────────
+// Login → pick/create a child profile → AppShell. AppShell only mounts once
+// there's a real activeChildId, so none of its hooks ever run signed-out.
+
+export default function App() {
+  const auth = useAuth();
+
+  if (auth.status === "loading") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#fdfbf7]">
+        <div className="text-stone-400 text-sm">Loading...</div>
+      </div>
+    );
+  }
+
+  if (auth.status === "signed-out" || !auth.me) {
+    return <LoginScreen onLogin={auth.login} onRegister={auth.register} />;
+  }
+
+  if (!auth.activeChild) {
+    return (
+      <ChildGate
+        childProfiles={auth.me.children}
+        onSelect={auth.selectChild}
+        onAdd={auth.addChild}
+        onLogout={auth.logout}
+      />
+    );
+  }
+
+  return (
+    <AppShell
+      key={auth.activeChild.id}
+      activeChildId={auth.activeChild.id}
+      activeChildName={auth.activeChild.displayName}
+      onSwitchProfile={() => {
+        auth.deselectChild().catch((e) => console.warn("Could not switch profiles", e));
+      }}
+    />
   );
 }

@@ -11,12 +11,27 @@ import { bookRepository } from "./server/books";
 import { importTextBook } from "./server/books/importer";
 import { isDbHealthy } from "./db/client.js";
 import { discoverImportOpenLibraryWork, DiscoveryImportError } from "./server/books/openLibraryImport";
-import { getOrCreateDefaultChildId, getProgress, recordPageRead, unlockBadge as unlockBadgeInDb } from "./server/progress/repository.js";
+import { getProgress, recordPageRead, unlockBadge as unlockBadgeInDb } from "./server/progress/repository.js";
 import authRoutes from "./server/auth/routes.js";
 import childRoutes from "./server/auth/childRoutes.js";
-import { loadSession } from "./server/auth/middleware.js";
+import { loadSession, requireAuth, requireChildContext } from "./server/auth/middleware.js";
 
 dotenv.config();
+
+// ── Process-level safety net (Sprint C) ─────────────────────────────────────
+// Discovered via Sprint C's runtime smoke test: an unguarded async route
+// handler that rejects (e.g. a malformed request hitting a DB type error)
+// becomes an unhandled promise rejection, which crashes the entire Node
+// process — taking every family's session down, not just the one bad
+// request. Route-level asyncHandler wrappers (server/auth/routes.ts,
+// server/auth/childRoutes.ts) are the real fix; this is defense-in-depth
+// for anywhere that doesn't have one yet.
+process.on("unhandledRejection", (reason) => {
+  console.error("[StoryPals] Unhandled promise rejection (process kept alive):", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[StoryPals] Uncaught exception (process kept alive):", err);
+});
 
 // ── Environment ────────────────────────────────────────────────────────────────
 const isPlatformHosted = !!process.env.PORT && !process.env.NODE_ENV;
@@ -541,24 +556,17 @@ async function startServer() {
     }
   });
 
-  // ── Progress persistence (Sprint 5, issue 02) ───────────────────────────────
-  // No auth yet, so the client works against a single auto-provisioned
-  // "default" child profile. localStorage stays the fast optimistic cache;
-  // the DB is the source of truth once it's reachable.
+  // ── Progress persistence (Sprint C: Identity) ───────────────────────────────
+  // Session-scoped: the active child comes from req.session.activeChildId
+  // (set by POST /api/auth/switch-child), never from a client-supplied id in
+  // the URL. requireChildContext (401/403) closes the hole where any caller
+  // could previously read or write any child's progress by guessing an id.
+  // localStorage stays the fast optimistic cache on the client; the DB is
+  // the source of truth once it's reachable.
 
-  app.get("/api/child/default", async (_req: Request, res: Response): Promise<any> => {
+  app.get("/api/progress", requireAuth, requireChildContext, async (req: Request, res: Response): Promise<any> => {
     try {
-      const childId = await getOrCreateDefaultChildId();
-      return res.json({ childId });
-    } catch (err: any) {
-      console.error("Default child lookup error:", err);
-      return res.status(503).json({ error: err?.message || "Database unavailable." });
-    }
-  });
-
-  app.get("/api/progress/:childId", async (req: Request, res: Response): Promise<any> => {
-    try {
-      const progress = await getProgress(req.params.childId);
+      const progress = await getProgress(req.session!.activeChildId!);
       return res.json({ progress });
     } catch (err: any) {
       console.error("Progress fetch error:", err);
@@ -566,7 +574,7 @@ async function startServer() {
     }
   });
 
-  app.patch("/api/progress/:childId/page", async (req: Request, res: Response): Promise<any> => {
+  app.patch("/api/progress/page", requireAuth, requireChildContext, async (req: Request, res: Response): Promise<any> => {
     try {
       const { bookId, pageNumber, starsEarned, totalPages } = req.body;
       if (typeof bookId !== "string" || !bookId) {
@@ -577,7 +585,7 @@ async function startServer() {
       }
       const stars = typeof starsEarned === "number" ? starsEarned : 1;
 
-      await recordPageRead(req.params.childId, bookId, pageNumber, stars, typeof totalPages === "number" ? totalPages : undefined);
+      await recordPageRead(req.session!.activeChildId!, bookId, pageNumber, stars, typeof totalPages === "number" ? totalPages : undefined);
       return res.json({ persisted: true });
     } catch (err: any) {
       console.error("Page-read persistence error:", err);
@@ -585,13 +593,13 @@ async function startServer() {
     }
   });
 
-  app.post("/api/progress/:childId/badge", async (req: Request, res: Response): Promise<any> => {
+  app.post("/api/progress/badge", requireAuth, requireChildContext, async (req: Request, res: Response): Promise<any> => {
     try {
       const { badgeId, badgeName, icon } = req.body;
       if (typeof badgeId !== "string" || !badgeId) {
         return res.status(400).json({ error: "badgeId is required." });
       }
-      await unlockBadgeInDb(req.params.childId, badgeId, badgeName || badgeId, icon || "🏅");
+      await unlockBadgeInDb(req.session!.activeChildId!, badgeId, badgeName || badgeId, icon || "🏅");
       return res.json({ persisted: true });
     } catch (err: any) {
       console.error("Badge persistence error:", err);

@@ -117,12 +117,22 @@ export async function registerUser(input: RegisterInput): Promise<RegisterResult
   const bc = await getBcrypt();
   const passwordHash = await bc.hash(input.password, 12);
 
-  const [user] = await db
-    .insert(users)
-    .values({ email, displayName: input.displayName.trim() })
-    .returning({ id: users.id });
+  // Transactional: previously these were two separate inserts, so a failure
+  // on the second (e.g. a transient DB error, or — as happened during Sprint
+  // C's runtime smoke test — a missing user_passwords table) left an
+  // orphaned users row with no password, permanently blocking both login
+  // and re-registration for that email. Wrapping in a transaction makes the
+  // whole registration atomic: either both rows land, or neither does.
+  const user = await db.transaction(async (tx) => {
+    const [inserted] = await tx
+      .insert(users)
+      .values({ email, displayName: input.displayName.trim() })
+      .returning({ id: users.id });
 
-  await db.insert(userPasswords).values({ userId: user.id, passwordHash });
+    await tx.insert(userPasswords).values({ userId: inserted.id, passwordHash });
+
+    return inserted;
+  });
 
   return { ok: true, userId: user.id };
 }

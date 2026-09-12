@@ -20,20 +20,38 @@ function sanitize(v: unknown, max = 200): string {
 const VALID_AGE_BANDS = ["4-5", "6-7", "8-9"] as const;
 const VALID_BUDDY_ROLES = ["owl", "dragon"] as const;
 
+/**
+ * See server/auth/routes.ts for why this exists — a rejected promise in an
+ * unguarded async Express handler crashes the whole process, not just the
+ * one request. Found via Sprint C's runtime smoke test.
+ */
+function asyncHandler(fn: (req: Request, res: Response) => Promise<any>) {
+  return async (req: Request, res: Response) => {
+    try {
+      return await fn(req, res);
+    } catch (err: any) {
+      console.error("[children] Unhandled route error:", err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Something went wrong. Please try again." } });
+      }
+    }
+  };
+}
+
 // ── List ──────────────────────────────────────────────────────────────────────
 
-router.get("/", async (req: Request, res: Response): Promise<any> => {
+router.get("/", asyncHandler(async (req: Request, res: Response): Promise<any> => {
   const { userId } = req.session!;
   const children = await db
     .select()
     .from(childProfiles)
     .where(eq(childProfiles.parentUserId, userId));
   return res.json({ children });
-});
+}));
 
 // ── Create ────────────────────────────────────────────────────────────────────
 
-router.post("/", async (req: Request, res: Response): Promise<any> => {
+router.post("/", asyncHandler(async (req: Request, res: Response): Promise<any> => {
   const { userId } = req.session!;
   const displayName = sanitize(req.body.displayName, 100);
   const ageBand = req.body.ageBand;
@@ -69,11 +87,11 @@ router.post("/", async (req: Request, res: Response): Promise<any> => {
   await db.insert(childSettings).values({ childId: child.id });
 
   return res.status(201).json({ child });
-});
+}));
 
 // ── Update ────────────────────────────────────────────────────────────────────
 
-router.patch("/:id", async (req: Request, res: Response): Promise<any> => {
+router.patch("/:id", asyncHandler(async (req: Request, res: Response): Promise<any> => {
   const { userId } = req.session!;
   const { id } = req.params;
 
@@ -107,11 +125,11 @@ router.patch("/:id", async (req: Request, res: Response): Promise<any> => {
     .returning();
 
   return res.json({ child: updated });
-});
+}));
 
 // ── Delete ────────────────────────────────────────────────────────────────────
 
-router.delete("/:id", async (req: Request, res: Response): Promise<any> => {
+router.delete("/:id", asyncHandler(async (req: Request, res: Response): Promise<any> => {
   const { userId } = req.session!;
   const { id } = req.params;
 
@@ -124,6 +142,6 @@ router.delete("/:id", async (req: Request, res: Response): Promise<any> => {
 
   await db.delete(childProfiles).where(eq(childProfiles.id, id));
   return res.json({ ok: true });
-});
+}));
 
 export default router;

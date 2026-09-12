@@ -26,6 +26,10 @@ interface NavbarProps {
   settings: ReaderSettings;
   setSettings: React.Dispatch<React.SetStateAction<ReaderSettings>>;
   hasActiveBook: boolean;
+  /** Sprint C: current reading child's display name, shown as a switch-profile affordance. */
+  activeChildName?: string;
+  /** Sprint C: returns to the "Who's reading?" picker without fully logging out. */
+  onSwitchProfile?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -39,6 +43,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   settings,
   setSettings,
   hasActiveBook,
+  activeChildName,
+  onSwitchProfile,
 }) => {
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
 
@@ -174,6 +180,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             </span>
             <MessageCircle className="w-3.5 h-3.5 ml-0.5" />
           </button>
+
+          {/* Switch reading profile (Sprint C) */}
+          {onSwitchProfile && (
+            <button
+              id="switch-profile-btn"
+              onClick={onSwitchProfile}
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-white border border-amber-200 text-amber-800 hover:text-amber-950 hover:bg-amber-50 transition-colors shadow-xs text-xs font-semibold"
+              title="Switch reading profile"
+            >
+              <Users className="w-4 h-4" />
+              {activeChildName && <span className="max-w-[6rem] truncate">{activeChildName}</span>}
+            </button>
+          )}
 
           {/* Reader Settings button */}
           <div className="relative">

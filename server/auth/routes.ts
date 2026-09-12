@@ -52,9 +52,30 @@ function getIp(req: Request): string {
   return (Array.isArray(fwd) ? fwd[0] : fwd?.split(",")[0]) ?? req.socket.remoteAddress ?? "unknown";
 }
 
+/**
+ * Wraps an async route handler so a rejected promise (a DB error, a bug, a
+ * transient network blip) returns a 500 to the caller instead of becoming an
+ * unhandled rejection that crashes the whole Node process for every user.
+ * Discovered during Sprint C's runtime smoke test: a malformed
+ * POST /switch-child body took the entire server down, not just that
+ * request — every one of this router's handlers had the same gap.
+ */
+function asyncHandler(fn: (req: Request, res: Response) => Promise<any>) {
+  return async (req: Request, res: Response) => {
+    try {
+      return await fn(req, res);
+    } catch (err: any) {
+      console.error("[auth] Unhandled route error:", err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Something went wrong. Please try again." } });
+      }
+    }
+  };
+}
+
 // ── Register ──────────────────────────────────────────────────────────────────
 
-router.post("/register", async (req: Request, res: Response): Promise<any> => {
+router.post("/register", asyncHandler(async (req: Request, res: Response): Promise<any> => {
   const email = sanitize(req.body.email);
   const displayName = sanitize(req.body.displayName, 100);
   const password = typeof req.body.password === "string" ? req.body.password : "";
@@ -71,11 +92,11 @@ router.post("/register", async (req: Request, res: Response): Promise<any> => {
   }
 
   return res.status(201).json({ userId: result.userId });
-});
+}));
 
 // ── Login ─────────────────────────────────────────────────────────────────────
 
-router.post("/login", async (req: Request, res: Response): Promise<any> => {
+router.post("/login", asyncHandler(async (req: Request, res: Response): Promise<any> => {
   const email = sanitize(req.body.email);
   const password = typeof req.body.password === "string" ? req.body.password : "";
 
@@ -97,11 +118,11 @@ router.post("/login", async (req: Request, res: Response): Promise<any> => {
 
   setSessionCookie(res, result.sessionToken);
   return res.json({ ok: true, userId: result.userId });
-});
+}));
 
 // ── Me ────────────────────────────────────────────────────────────────────────
 
-router.get("/me", requireAuth, async (req: Request, res: Response): Promise<any> => {
+router.get("/me", requireAuth, asyncHandler(async (req: Request, res: Response): Promise<any> => {
   const session = req.session!;
   const children = await getChildrenForParent(session.userId);
 
@@ -120,11 +141,11 @@ router.get("/me", requireAuth, async (req: Request, res: Response): Promise<any>
       buddyRole: c.buddyRole,
     })),
   });
-});
+}));
 
 // ── Switch child context ──────────────────────────────────────────────────────
 
-router.post("/switch-child", requireAuth, async (req: Request, res: Response): Promise<any> => {
+router.post("/switch-child", requireAuth, asyncHandler(async (req: Request, res: Response): Promise<any> => {
   const session = req.session!;
   const token = req.cookies?.[SESSION_COOKIE] as string;
   const childId = req.body.childId ?? null; // null = switch back to parent context
@@ -136,20 +157,20 @@ router.post("/switch-child", requireAuth, async (req: Request, res: Response): P
   }
 
   return res.json({ ok: true, activeChildId: childId });
-});
+}));
 
 // ── Logout ────────────────────────────────────────────────────────────────────
 
-router.post("/logout", requireAuth, async (req: Request, res: Response): Promise<any> => {
+router.post("/logout", requireAuth, asyncHandler(async (req: Request, res: Response): Promise<any> => {
   const token = req.cookies?.[SESSION_COOKIE] as string;
   await logoutSession(token);
   clearSessionCookie(res);
   return res.json({ ok: true });
-});
+}));
 
 // ── Password reset — request ──────────────────────────────────────────────────
 
-router.post("/password-reset/request", async (req: Request, res: Response): Promise<any> => {
+router.post("/password-reset/request", asyncHandler(async (req: Request, res: Response): Promise<any> => {
   const email = sanitize(req.body.email);
   if (!email) {
     return res.status(400).json({ error: { code: "MISSING_FIELDS", message: "email is required." } });
@@ -172,11 +193,11 @@ router.post("/password-reset/request", async (req: Request, res: Response): Prom
   }
 
   return res.json({ ok: true, message: "If that email exists, a reset link has been sent." });
-});
+}));
 
 // ── Password reset — confirm ──────────────────────────────────────────────────
 
-router.post("/password-reset/confirm", async (req: Request, res: Response): Promise<any> => {
+router.post("/password-reset/confirm", asyncHandler(async (req: Request, res: Response): Promise<any> => {
   const token = sanitize(req.body.token, 200);
   const newPassword = typeof req.body.newPassword === "string" ? req.body.newPassword : "";
 
@@ -196,11 +217,11 @@ router.post("/password-reset/confirm", async (req: Request, res: Response): Prom
   }
 
   return res.json({ ok: true, message: "Password updated. Please log in with your new password." });
-});
+}));
 
 // ── Account deletion ──────────────────────────────────────────────────────────
 
-router.delete("/account", requireAuth, async (req: Request, res: Response): Promise<any> => {
+router.delete("/account", requireAuth, asyncHandler(async (req: Request, res: Response): Promise<any> => {
   const session = req.session!;
   const password = typeof req.body.password === "string" ? req.body.password : "";
 
@@ -221,6 +242,6 @@ router.delete("/account", requireAuth, async (req: Request, res: Response): Prom
   await deleteAccount(session.userId);
   clearSessionCookie(res);
   return res.json({ ok: true, message: "Account deleted." });
-});
+}));
 
 export default router;

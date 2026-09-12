@@ -2,6 +2,7 @@
 // All tables exported from a single module for Drizzle.
 
 export * from "./users";
+export * from "./auth";
 export * from "./childProfiles";
 export * from "./books";
 export * from "./providers";
