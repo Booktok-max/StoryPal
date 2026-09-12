@@ -7,7 +7,8 @@ import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
 import { GoogleGenAI, Modality } from "@google/genai";
-import { bookRepository } from "./server/books";
+import { bookRepository, listBestsellers, NYT_LIST_NAMES, NYT_ATTRIBUTION, nytimesProviderInfo } from "./server/books";
+import type { NytListSlug } from "./server/books";
 import { importTextBook } from "./server/books/importer";
 import { isDbHealthy } from "./db/client.js";
 import { discoverImportOpenLibraryWork, DiscoveryImportError } from "./server/books/openLibraryImport";
@@ -168,7 +169,32 @@ async function startServer() {
 
   // ── Book catalog API ──────────────────────────────────────────────────────────
   app.get("/api/providers", (_req: Request, res: Response) => {
-    res.json({ providers: bookRepository.getProviders() });
+    // NYT is list-based, not a BookProvider (see server/books/providers/nytimes.ts),
+    // so it isn't in bookRepository's internal array — surfaced here manually
+    // so the frontend knows it exists.
+    res.json({ providers: [...bookRepository.getProviders(), nytimesProviderInfo] });
+  });
+
+  // Bestseller rail (Section 6.3) — list-based, separate from free-text
+  // search results by design; do not merge into /api/books/search.
+  app.get("/api/books/featured", async (req: Request, res: Response): Promise<any> => {
+    try {
+      const list = typeof req.query.list === "string" ? req.query.list : "picture-books";
+      if (!(list in NYT_LIST_NAMES)) {
+        return res.status(400).json({
+          error: `Unknown list "${list}". Valid options: ${Object.keys(NYT_LIST_NAMES).join(", ")}`,
+        });
+      }
+      const books = await listBestsellers(list as NytListSlug);
+      return res.json({
+        books: books.map((b: any) => withGuaranteedCover(req, b)),
+        listName: NYT_LIST_NAMES[list as NytListSlug],
+        attribution: NYT_ATTRIBUTION,
+      });
+    } catch (err: any) {
+      console.error("NYT bestsellers error:", err);
+      return res.status(500).json({ error: err?.message || "Failed to load bestsellers." });
+    }
   });
 
   // ── Cover placeholder (Spec Section 6.1, tier 6) ────────────────────────────

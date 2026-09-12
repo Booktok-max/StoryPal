@@ -91,7 +91,7 @@ general-purpose chatbot for children.
 
 [x] Sprint B.1: Sign-up email verification — implemented (nudge model), not yet deployed (see Section 4.1)
 
-[~] Sprint H.1: Additional discovery providers (NYT Books API, Google Books API) — planned, not yet implemented (see Section 6.3)
+[x] Sprint H.1: Additional discovery providers (NYT Books API, Google Books API) — implemented, not yet deployed (see Section 6.3)
 
 [x] Book search relevance fix — Open Library provider now over-fetches and re-ranks by quality signal instead of filtering a single small page (see Section 6.4)
 
@@ -416,28 +416,30 @@ NYT Books API
     editorially-vetted picks alongside raw search.
 
   Implementation steps
-  [ ] 1. Register for an NYT Developer API key (manual, external —
-         cannot be automated); add NYT_API_KEY to Railway env vars.
-  [ ] 2. server/books/providers/nytimes.ts: new provider file.
+  [!] 1. Register for an NYT Developer API key (manual, external —
+         cannot be automated); add NYT_API_KEY to Railway env vars. BLOCKED on you — code is ready and reads NYT_API_KEY; returns an empty bestseller list until it's set.
+  [x] 2. server/books/providers/nytimes.ts: new provider file.
          Capabilities: { metadata: true, fullText: false, covers: false,
          requiresApiKey: true }.
-  [ ] 3. Implement listBestsellers(listName) — no search(), since NYT's
+  [x] 3. Implement listBestsellers(listName) — no search(), since NYT's
          API is list-based, not query-based; this provider won't fit
-         BookProvider.search() the same way Open Library does. Likely
-         needs a small interface extension or a dedicated
-         GET /api/books/featured endpoint rather than forcing it
-         through /api/books/search.
-  [ ] 4. Cross-reference each NYT entry's ISBN against the existing
+         BookProvider.search() the same way Open Library does. Went
+         with the dedicated GET /api/books/featured?list= endpoint,
+         not a BookProvider.search() extension.
+  [x] 4. Cross-reference each NYT entry's ISBN against the existing
          Open Library cover endpoint (covers.openlibrary.org/b/isbn/
          {isbn}-M.jpg) for a display image, since NYT doesn't host one.
-  [ ] 5. New frontend surface: a "Bestsellers" rail/section in
+  [x] 5. New frontend surface: a "Bestsellers" rail/section in
          BookDiscoveryModal, separate from the free-text search
          results — do not merge into the same list, since the data
-         shapes and interaction (browse vs. search) differ.
-  [ ] 6. Cache aggressively (NYT list data updates weekly) — a 12-24h
+         shapes and interaction (browse vs. search) differ. Shipped
+         for the "Picture Books" list; the other three list slugs
+         (middle-grade, series, chapter books) are supported by the
+         same /api/books/featured?list= endpoint but have no rail UI yet.
+  [x] 6. Cache aggressively (NYT list data updates weekly) — a 12-24h
          cache TTL is appropriate, unlike Open Library's 5-minute
-         cache for live search.
-  [ ] 7. Attribution line displayed wherever NYT data is shown.
+         cache for live search. 24h TTL, per-list-slug.
+  [x] 7. Attribution line displayed wherever NYT data is shown.
 
 Google Books API
   - Source: Google Cloud Console, free self-serve API key (no billing
@@ -453,30 +455,39 @@ Google Books API
     of the bestseller-rail use case above.
 
   Implementation steps
-  [ ] 1. Create a Google Cloud project, enable the Books API, generate
+  [!] 1. Create a Google Cloud project, enable the Books API, generate
          an API key restricted to that API (manual, external); add
-         GOOGLE_BOOKS_API_KEY to Railway env vars.
-  [ ] 2. server/books/providers/googlebooks.ts: new provider file,
+         GOOGLE_BOOKS_API_KEY to Railway env vars. BLOCKED on you — code reads
+         GOOGLE_BOOKS_API_KEY and fails soft (contributes nothing to
+         search) until it's set.
+  [x] 2. server/books/providers/googlebooks.ts: new provider file,
          modeled directly on server/books/providers/openlibrary.ts —
          same isChildRelevant()-style filtering (Google Books has its
          own subject/category taxonomy, will need its own term list),
          same over-fetch-then-filter pattern from the openlibrary.ts
          fix (6.4) applied from the start rather than retrofitted
          later.
-  [ ] 3. Register the new provider in server/books/catalog.ts /
+  [x] 3. Register the new provider in server/books/catalog.ts /
          index.ts alongside the existing four.
-  [ ] 4. Add "google-books" as a valid query.source value end-to-end
-         (types.ts, server.ts route validation, BookDiscoveryModal's
-         provider tabs).
-  [ ] 5. Decide de-duplication behavior: a popular children's book
+  [x] 4. Add "google-books" as a valid query.source value end-to-end
+         (types.ts, BookDiscoveryModal's search merge). server.ts never had a
+         source whitelist to update — query.source is passed straight
+         through as BookSourceType.
+  [~] 5. Decide de-duplication behavior: a popular children's book
          will likely appear in both Open Library and Google Books
          results for the same query — BookRepository.list()'s
          dedupeBooks() needs a real key (ISBN-based, not just title
          string match) to avoid showing the same book twice in a
-         combined view.
-  [ ] 6. Test suite: unit test the new provider's filtering logic in
+         combined view. NOT YET DONE — dedupeBooks() still only
+         dedupes by book.id and a normalized title+author fingerprint,
+         not ISBN. Left as-is for this pass since neither provider's
+         Book object currently carries an isbn field; flagging as the
+         next follow-up rather than a silent scope-add here.
+  [x] 6. Test suite: unit test the new provider's filtering logic in
          isolation, matching the pattern used for openlibrary.ts if
-         such tests exist, or add one now if they don't.
+         such tests exist, or add one now if they don't. Added
+         test/googlebooks-provider.test.ts (7 tests) — no such tests
+         existed for any provider before this.
 
 6.4. Book Search Relevance Fix — Sprint B.1 (Shipped)
 Status: DONE (local, lint-clean; not yet deployed)
@@ -504,6 +515,32 @@ Known limitations: still page:1-only (the caller
   already-ranked pool rather than re-fetching per page).
 Next step: apply the same over-fetch + quality-ranking pattern to the
   new Google Books provider (6.3) from the start.
+
+6.3 Status
+Status: Implemented locally; not yet deployed. Both providers fail soft
+  (contribute nothing) if their API key env var is unset, so this cannot
+  break existing search/catalog behavior even before keys are configured.
+Date: 12 September 2026
+Commit: (pending — not yet pushed)
+What changed: server/books/providers/googlebooks.ts (BookProvider,
+  registered in catalog.ts, same over-fetch+quality-rank pattern as 6.4);
+  server/books/providers/nytimes.ts (listBestsellers(), not a BookProvider —
+  list-based per spec); GET /api/books/featured?list= route; BookDiscoveryModal
+  now merges google-books into search and shows a "Picture Books" NYT rail;
+  BookSourceType gained "google-books" | "nytimes"; .env.example documents
+  GOOGLE_BOOKS_API_KEY and NYT_API_KEY.
+Tests: test/googlebooks-provider.test.ts (7 tests, isChildRelevant +
+  qualityScore) — new pattern, none existed for any provider before this.
+  npx tsc --noEmit, vite build, and the esbuild server bundle all pass with
+  no new errors (one pre-existing, unrelated error in
+  server/books/progress/repository.ts was already there before this work).
+Known limitations: NYT_API_KEY / GOOGLE_BOOKS_API_KEY not yet obtained/set
+  (external manual step — see steps 1 above in each section); Bestsellers
+  rail only wired up for the "picture-books" list, not the other three;
+  ISBN-based de-duplication (6.3 Google Books step 5) not implemented —
+  dedupeBooks() still uses title+author fingerprint only.
+Next step: register for NYT_API_KEY and GOOGLE_BOOKS_API_KEY, set both in
+  Railway, redeploy, then verify both providers return real results.
 
 7. Personal EPUB/PDF Shelf — Required Capability (Sprint D)
 Private family uploads of EPUB and PDF books. Critical: uploads must
@@ -992,9 +1029,9 @@ Library
 
 [x] Search relevance (Open Library over-fetch + quality ranking shipped, Section 6.4)
 
-[ ] NYT Books API bestseller rail
+[x] NYT Books API bestseller rail (implemented, not yet deployed; NYT_API_KEY not yet set)
 
-[ ] Google Books API provider
+[x] Google Books API provider (implemented, not yet deployed; GOOGLE_BOOKS_API_KEY not yet set)
 
 Reading
 [x] Progress persistence (DB-backed, session-scoped)

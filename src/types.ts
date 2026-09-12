@@ -13,6 +13,8 @@ export type BookSourceType =
   | "openlibrary"
   | "standardebooks"
   | "public-domain"
+  | "google-books"
+  | "nytimes"
   | "uploaded"
   | "ai";
 

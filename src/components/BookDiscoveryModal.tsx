@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { BookOpen, ExternalLink, Loader2, Search, X, Sparkles, LibraryBig, CheckCircle2 } from "lucide-react";
+import { BookOpen, ExternalLink, Loader2, Search, X, Sparkles, LibraryBig, CheckCircle2, Trophy } from "lucide-react";
 import { Book } from "../types";
 import { SafeStoryImage } from "./SafeStoryImage";
 import { discoverImportBook } from "../api/client";
@@ -35,6 +35,31 @@ export const BookDiscoveryModal: React.FC<BookDiscoveryModalProps> = ({
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
   const [addErrors, setAddErrors] = useState<Record<string, string>>({});
 
+  // Bestsellers rail (Section 6.3) — separate data/UI from free-text search,
+  // by design: browse vs. search have different interaction shapes.
+  const [bestsellers, setBestsellers] = useState<Book[]>([]);
+  const [bestsellersLoading, setBestsellersLoading] = useState(false);
+  const [bestsellersAttribution, setBestsellersAttribution] = useState("");
+  const [bestsellersUnavailable, setBestsellersUnavailable] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setBestsellersLoading(true);
+    fetch("/api/books/featured?list=picture-books")
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data.books) && data.books.length > 0) {
+          setBestsellers(data.books);
+          setBestsellersAttribution(data.attribution || "");
+        } else {
+          setBestsellersUnavailable(true);
+        }
+      })
+      .catch(() => setBestsellersUnavailable(true))
+      .finally(() => setBestsellersLoading(false));
+  }, [isOpen]);
+
+
   useEffect(() => {
     if (!isOpen) {
       setQuery("");
@@ -58,9 +83,10 @@ export const BookDiscoveryModal: React.FC<BookDiscoveryModalProps> = ({
     setHasSearched(true);
 
     try {
-      const [openLibraryRes, standardEbooksRes] = await Promise.allSettled([
+      const [openLibraryRes, standardEbooksRes, googleBooksRes] = await Promise.allSettled([
         fetch(`/api/books/search?q=${encodeURIComponent(q)}&source=openlibrary`).then((r) => r.json()),
         fetch(`/api/books/search?q=${encodeURIComponent(q)}&source=standardebooks`).then((r) => r.json()),
+        fetch(`/api/books/search?q=${encodeURIComponent(q)}&source=google-books`).then((r) => r.json()),
       ]);
 
       const merged: Book[] = [];
@@ -70,8 +96,11 @@ export const BookDiscoveryModal: React.FC<BookDiscoveryModalProps> = ({
       if (standardEbooksRes.status === "fulfilled" && Array.isArray(standardEbooksRes.value.books)) {
         merged.push(...standardEbooksRes.value.books);
       }
+      if (googleBooksRes.status === "fulfilled" && Array.isArray(googleBooksRes.value.books)) {
+        merged.push(...googleBooksRes.value.books);
+      }
 
-      if (!merged.length && openLibraryRes.status === "rejected" && standardEbooksRes.status === "rejected") {
+      if (!merged.length && [openLibraryRes, standardEbooksRes, googleBooksRes].every((r) => r.status === "rejected")) {
         throw new Error("Could not find books right now.");
       }
 
@@ -162,6 +191,49 @@ export const BookDiscoveryModal: React.FC<BookDiscoveryModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* ── Bestsellers rail (Section 6.3) ── */}
+        {(bestsellersLoading || bestsellers.length > 0) && !bestsellersUnavailable && (
+          <div className="px-5 sm:px-6 py-4 border-b border-stone-100 bg-white">
+            <div className="flex items-center gap-2 mb-3">
+              <Trophy className="w-4 h-4 text-amber-500" />
+              <h3 className="text-sm font-extrabold text-stone-800">NYT Picture Books Bestsellers</h3>
+            </div>
+            {bestsellersLoading ? (
+              <div className="flex items-center gap-2 text-sm text-stone-400 py-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading bestsellers…
+              </div>
+            ) : (
+              <>
+                <div className="flex gap-3 overflow-x-auto pb-1">
+                  {bestsellers.slice(0, 10).map((book) => (
+                    <div
+                      key={book.id}
+                      className="w-28 shrink-0 rounded-xl border border-amber-100 overflow-hidden bg-amber-50/50"
+                    >
+                      <div className="aspect-[2/3] bg-amber-50">
+                        <SafeStoryImage
+                          src={book.coverImage}
+                          alt={book.title}
+                          title={book.title}
+                          author={book.author}
+                          category={book.category}
+                          className="w-full h-full"
+                        />
+                      </div>
+                      <div className="p-1.5">
+                        <p className="text-[11px] font-bold text-stone-800 leading-tight line-clamp-2">{book.title}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {bestsellersAttribution && (
+                  <p className="text-[10px] text-stone-400 mt-2">{bestsellersAttribution}</p>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
         {/* ── Search bar ── */}
         <form
@@ -313,10 +385,11 @@ export const BookDiscoveryModal: React.FC<BookDiscoveryModalProps> = ({
 
         {/* ── Footer ── */}
         <div className="px-5 py-3 bg-white border-t border-stone-100 text-[11px] text-stone-400">
-          Book information and covers from Open Library (openlibrary.org) and
-          Standard Ebooks (standardebooks.org). Results are filtered for
-          children's content — not all books are available to read inside
-          StoryPals yet.
+          Book information and covers from Open Library (openlibrary.org),
+          Standard Ebooks (standardebooks.org), and Google Books. Bestseller
+          data based on reporting from The New York Times. Results are
+          filtered for children's content — not all books are available to
+          read inside StoryPals yet.
         </div>
       </div>
     </div>
