@@ -63,6 +63,8 @@ export interface Book {
   estimatedMinutes?: number;
   status?: BookStatus;
   aiEnhanced?: boolean;
+  /** ISBN-13 or ISBN-10 if known — used for cross-provider deduplication. */
+  isbn?: string;
 }
 
 export interface DailyReadingActivity {
@@ -98,6 +100,18 @@ export interface UserProgress {
   }>;
   dailyActivity?: DailyReadingActivity[];
   dailyGoalPages?: number;
+}
+
+export type ShelfStatus = "want-to-read" | "reading" | "finished";
+
+export interface ShelfItem {
+  id: string;
+  bookId: string;
+  status: ShelfStatus;
+  favorite: boolean;
+  progressPage: number;
+  addedAt: string;
+  lastOpenedAt: string | null;
 }
 
 export interface Badge {

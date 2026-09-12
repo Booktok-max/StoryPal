@@ -151,12 +151,23 @@ export class BookRepository {
 
 function dedupeBooks(books: Book[]): Book[] {
   const seenIds = new Set<string>();
+  const seenIsbns = new Set<string>();
   const seenFingerprints = new Set<string>();
 
   return books.filter((book) => {
+    // 1. Exact provider ID (catches same book fetched twice from the same provider)
     if (seenIds.has(book.id)) return false;
     seenIds.add(book.id);
 
+    // 2. ISBN-based (catches the same edition across different providers,
+    //    e.g. Google Books + NYT both returning the same ISBN-13)
+    if (book.isbn) {
+      const normalizedIsbn = book.isbn.replace(/[^0-9X]/gi, "");
+      if (seenIsbns.has(normalizedIsbn)) return false;
+      seenIsbns.add(normalizedIsbn);
+    }
+
+    // 3. Normalised title + primary-author fingerprint (broadest net)
     const fingerprint = titleAuthorFingerprint(book.title, book.author);
     if (seenFingerprints.has(fingerprint)) return false;
     seenFingerprints.add(fingerprint);

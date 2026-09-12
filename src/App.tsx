@@ -21,6 +21,7 @@ import { LoginScreen } from "./components/LoginScreen";
 import { ChildGate } from "./components/ChildGate";
 import { useApiHealth } from "./hooks/useApiHealth";
 import { useAuth } from "./hooks/useAuth";
+import { useShelf } from "./hooks/useShelf";
 import { saveIllustration, fetchProgress, recordPage, unlockBadgeRemote } from "./api/client";
 
 const STORAGE_KEY_PROGRESS = "storypals_user_progress_v1";
@@ -34,6 +35,8 @@ interface AppShellProps {
 
 function AppShell({ activeChildId, activeChildName, onSwitchProfile }: AppShellProps) {
   const { aiAvailable } = useApiHealth();
+  // AppShell only mounts when a child session is active, so shelf is always live
+  const shelf = useShelf(true);
 
   const [books, setBooks] = useState<Book[]>(INITIAL_BOOKS);
 
@@ -213,6 +216,8 @@ function AppShell({ activeChildId, activeChildName, onSwitchProfile }: AppShellP
     const existing = progress.bookProgress[book.id];
     setCurrentPageIndex(existing ? Math.max(0, existing.currentPage - 1) : 0);
     setActiveView("reader");
+    // Auto-add to shelf as "reading" (no-op if already finished)
+    shelf.markReading(book.id).catch(() => {});
   };
 
   const handlePageCompleted = (pageNumber: number) => {
@@ -260,6 +265,7 @@ function AppShell({ activeChildId, activeChildName, onSwitchProfile }: AppShellP
     });
 
     if (isBookNowCompleted) unlockBadge("book-finisher", "Book Champion", "🏆");
+    if (isBookNowCompleted) shelf.markFinished(bookId).catch(() => {});
     if (newTotalStars >= 10) unlockBadge("super-streak", "Star Reader", "⭐");
 
     recordPage({
@@ -433,6 +439,8 @@ function AppShell({ activeChildId, activeChildName, onSwitchProfile }: AppShellP
             books={books}
             progress={progress}
             onSelectBook={handleSelectBook}
+            shelfItems={shelf.items}
+            onShelfToggle={(bookId) => shelf.toggle(bookId).catch(() => {})}
             onOpenCreateStory={() => setIsCreateStoryOpen(true)}
             onOpenPassport={() => setActiveView("passport")}
             onOpenBookDiscovery={() => setIsBookDiscoveryOpen(true)}

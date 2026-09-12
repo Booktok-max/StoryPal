@@ -287,6 +287,49 @@ export async function updateBookStatus(
   });
 }
 
+// ── Shelf ─────────────────────────────────────────────────────────────────
+
+export type ShelfUpdateInput = {
+  status?: "want-to-read" | "reading" | "finished";
+  favorite?: boolean;
+  progressPage?: number;
+};
+
+/** Fetch all shelf items for the current child session. */
+export async function listShelf(): Promise<{ items: import("../types").ShelfItem[] }> {
+  return apiFetch("/api/shelf");
+}
+
+/** Add a book to the child's shelf (defaults to want-to-read). */
+export async function addToShelf(
+  bookId: string
+): Promise<{ item: import("../types").ShelfItem }> {
+  return apiFetch("/api/shelf", {
+    method: "POST",
+    body: JSON.stringify({ bookId }),
+  });
+}
+
+/** Update shelf item status, favorite flag, or progress page. */
+export async function patchShelfItem(
+  bookId: string,
+  input: ShelfUpdateInput
+): Promise<{ item: import("../types").ShelfItem | null }> {
+  return apiFetch(`/api/shelf/${encodeURIComponent(bookId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Remove a book from the shelf entirely. */
+export async function deleteFromShelf(
+  bookId: string
+): Promise<{ removed: boolean }> {
+  return apiFetch(`/api/shelf/${encodeURIComponent(bookId)}`, {
+    method: "DELETE",
+  });
+}
+
 /** Generate TTS audio for story text */
 export async function generateTts(text: string, voice: string = "Puck"): Promise<TtsResponse> {
   return apiFetch("/api/tts", {

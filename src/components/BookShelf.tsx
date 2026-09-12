@@ -13,10 +13,11 @@ import {
   Scroll,
   GraduationCap,
 } from "lucide-react";
-import { Book, UserProgress } from "../types";
+import { Book, UserProgress, ShelfItem } from "../types";
 import { SafeStoryImage } from "./SafeStoryImage";
 import { LevelOverrideModal } from "./LevelOverrideModal";
 import { updateBookStatus } from "../api/client";
+import { SHELF_STATUS_LABELS, SHELF_STATUS_EMOJI } from "../hooks/useShelf";
 
 const ADMIN_MODE = import.meta.env.VITE_ADMIN_MODE === "true";
 const ADMIN_KEY = import.meta.env.VITE_ADMIN_KEY ?? "";
@@ -28,27 +29,33 @@ const isImported = (book: Book) =>
 interface BookShelfProps {
   books: Book[];
   progress: UserProgress;
+  shelfItems: ShelfItem[];
   onSelectBook: (book: Book) => void;
   onOpenCreateStory: () => void;
   onOpenPassport: () => void;
   onOpenBookDiscovery: () => void;
   onLevelOverride: (bookId: string, level: Book["levelShort"]) => Promise<void>;
   onStatusUpdate: (bookId: string, status: "approved" | "rejected") => void;
+  onShelfToggle: (bookId: string) => void;
 }
 
 export const BookShelf: React.FC<BookShelfProps> = ({
   books,
   progress,
+  shelfItems,
   onSelectBook,
   onOpenCreateStory,
   onOpenPassport,
   onOpenBookDiscovery,
   onLevelOverride,
   onStatusUpdate,
+  onShelfToggle,
 }) => {
   const [filter, setFilter] = useState<string>("all");
   const [overrideBook, setOverrideBook] = useState<Book | null>(null);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
+
+  const shelfMap = new Map(shelfItems.map((i) => [i.bookId, i]));
 
   const handleReviewAction = async (book: Book, status: "approved" | "rejected") => {
     setReviewingId(book.id);
@@ -69,6 +76,7 @@ export const BookShelf: React.FC<BookShelfProps> = ({
     if (filter === "Level 2") return b.levelShort === "Level 2";
     if (filter === "Level 3") return b.levelShort === "Level 3";
     if (filter === "custom") return b.id.startsWith("custom-");
+    if (filter === "shelf") return shelfMap.has(b.id);
     return true;
   });
 
@@ -186,6 +194,7 @@ export const BookShelf: React.FC<BookShelfProps> = ({
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
           {[
             { id: "all", label: `All Books (${books.length})` },
+            { id: "shelf", label: `🔖 My Shelf (${shelfItems.length})` },
             { id: "fables", label: `📜 Aesop's Fables (${fablesCount})` },
             { id: "Level 1", label: "Level 1 (Early)" },
             { id: "Level 2", label: "Level 2 (Developing)" },
@@ -220,6 +229,9 @@ export const BookShelf: React.FC<BookShelfProps> = ({
           const readCount = bookStat.pagesRead.length;
           const percent = Math.round((readCount / totalPages) * 100);
           const isCompleted = bookStat.completed || percent === 100;
+
+          const shelfItem = shelfMap.get(book.id);
+          const onShelf = !!shelfItem;
 
           return (
             <div
@@ -257,16 +269,35 @@ export const BookShelf: React.FC<BookShelfProps> = ({
                       Pending Review
                     </span>
                   )}
+                  {/* Shelf status badge */}
+                  {shelfItem && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-600/90 text-white backdrop-blur-xs">
+                      {SHELF_STATUS_EMOJI[shelfItem.status]} {SHELF_STATUS_LABELS[shelfItem.status]}
+                    </span>
+                  )}
                 </div>
 
-                {/* Completion Status */}
+                {/* Bookmark / shelf toggle button */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); onShelfToggle(book.id); }}
+                  title={onShelf ? "Remove from shelf" : "Save to shelf"}
+                  className={`absolute top-3 right-3 z-20 p-1.5 rounded-full shadow-md transition-all active:scale-90 ${
+                    onShelf
+                      ? "bg-indigo-600 text-white"
+                      : "bg-white/80 text-stone-400 hover:text-indigo-600 hover:bg-white backdrop-blur-xs"
+                  }`}
+                >
+                  <Bookmark className={`w-3.5 h-3.5 ${onShelf ? "fill-current" : ""}`} />
+                </button>
+
+                {/* Completion / progress badge — repositioned below bookmark button */}
                 {isCompleted ? (
-                  <div className="absolute top-3 right-3 z-10 flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500 text-white shadow-sm">
+                  <div className="absolute bottom-14 right-3 z-10 flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500 text-white shadow-sm">
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>Completed!</span>
                   </div>
                 ) : readCount > 0 ? (
-                  <div className="absolute top-3 right-3 z-10 flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500 text-white shadow-sm">
+                  <div className="absolute bottom-14 right-3 z-10 flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500 text-white shadow-sm">
                     <span>
                       Page {bookStat.currentPage} of {totalPages}
                     </span>
