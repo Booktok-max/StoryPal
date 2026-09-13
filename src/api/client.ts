@@ -330,6 +330,45 @@ export async function deleteFromShelf(
   });
 }
 
+// ── Personal EPUB/PDF imports (Sprint D) ────────────────────────────────────
+// Uploads are private to the logged-in family account, never public.
+
+/**
+ * Upload a personal EPUB or PDF. Deliberately bypasses apiFetch: that
+ * helper forces a JSON Content-Type header, which would stomp the
+ * multipart/form-data boundary the browser needs to set itself for a
+ * FormData body.
+ */
+export async function uploadImportFile(file: File): Promise<{ job: import("../types").ImportJob }> {
+  const form = new FormData();
+  form.append("file", file);
+
+  const res = await fetch("/api/imports", {
+    method: "POST",
+    credentials: "include",
+    body: form,
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const err = (data as AuthApiError)?.error;
+    const error = new Error(err?.message || err?.code || `Upload failed (${res.status})`);
+    (error as any).code = err?.code;
+    (error as any).status = res.status;
+    throw error;
+  }
+  return data;
+}
+
+/** List this family's import jobs, most recent first. */
+export async function listImportJobs(): Promise<{ jobs: import("../types").ImportJob[] }> {
+  return apiFetch("/api/imports");
+}
+
+/** Fetch a single import job's current status. */
+export async function getImportJob(id: string): Promise<{ job: import("../types").ImportJob }> {
+  return apiFetch(`/api/imports/${encodeURIComponent(id)}`);
+}
+
 /** Generate TTS audio for story text */
 export async function generateTts(text: string, voice: string = "Puck"): Promise<TtsResponse> {
   return apiFetch("/api/tts", {

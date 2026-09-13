@@ -114,6 +114,28 @@ export interface ShelfItem {
   lastOpenedAt: string | null;
 }
 
+export type ImportJobFormat = "text" | "epub" | "pdf";
+export type ImportJobStatus =
+  | "queued"
+  | "processing"
+  | "pending-review"
+  | "approved"
+  | "rejected"
+  | "failed";
+
+export interface ImportJob {
+  id: string;
+  userId: string | null;
+  bookId: string | null;
+  filename: string | null;
+  format: ImportJobFormat;
+  status: ImportJobStatus;
+  progress: number;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Badge {
   id: string;
   name: string;

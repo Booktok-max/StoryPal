@@ -17,6 +17,7 @@ import { StoryCreatorModal } from "./components/StoryCreatorModal";
 import { OfflineBanner } from "./components/OfflineBanner";
 import { PhonicsWordInfo } from "./utils/phonics";
 import { BookDiscoveryModal } from "./components/BookDiscoveryModal";
+import { ImportBookModal } from "./components/ImportBookModal";
 import { LoginScreen } from "./components/LoginScreen";
 import { ChildGate } from "./components/ChildGate";
 import { useApiHealth } from "./hooks/useApiHealth";
@@ -187,6 +188,7 @@ function AppShell({ activeChildId, activeChildName, onSwitchProfile }: AppShellP
 
   const [isCreateStoryOpen, setIsCreateStoryOpen] = useState(false);
   const [isBookDiscoveryOpen, setIsBookDiscoveryOpen] = useState(false);
+  const [isImportBookOpen, setIsImportBookOpen] = useState(false);
 
   const [badgeToast, setBadgeToast] = useState<{ name: string; icon: string } | null>(null);
 
@@ -444,6 +446,7 @@ function AppShell({ activeChildId, activeChildName, onSwitchProfile }: AppShellP
             onOpenCreateStory={() => setIsCreateStoryOpen(true)}
             onOpenPassport={() => setActiveView("passport")}
             onOpenBookDiscovery={() => setIsBookDiscoveryOpen(true)}
+            onOpenImportBook={() => setIsImportBookOpen(true)}
             onLevelOverride={handleLevelOverride}
             onStatusUpdate={handleStatusUpdate}
           />
@@ -502,6 +505,11 @@ function AppShell({ activeChildId, activeChildName, onSwitchProfile }: AppShellP
         isOpen={isBookDiscoveryOpen}
         onClose={() => setIsBookDiscoveryOpen(false)}
         onBookAdded={handleBookAdded}
+      />
+
+      <ImportBookModal
+        isOpen={isImportBookOpen}
+        onClose={() => setIsImportBookOpen(false)}
       />
 
       <StoryCreatorModal

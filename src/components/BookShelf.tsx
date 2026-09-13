@@ -12,6 +12,7 @@ import {
   Bookmark,
   Scroll,
   GraduationCap,
+  UploadCloud,
 } from "lucide-react";
 import { Book, UserProgress, ShelfItem } from "../types";
 import { SafeStoryImage } from "./SafeStoryImage";
@@ -34,6 +35,7 @@ interface BookShelfProps {
   onOpenCreateStory: () => void;
   onOpenPassport: () => void;
   onOpenBookDiscovery: () => void;
+  onOpenImportBook: () => void;
   onLevelOverride: (bookId: string, level: Book["levelShort"]) => Promise<void>;
   onStatusUpdate: (bookId: string, status: "approved" | "rejected") => void;
   onShelfToggle: (bookId: string) => void;
@@ -47,6 +49,7 @@ export const BookShelf: React.FC<BookShelfProps> = ({
   onOpenCreateStory,
   onOpenPassport,
   onOpenBookDiscovery,
+  onOpenImportBook,
   onLevelOverride,
   onStatusUpdate,
   onShelfToggle,
@@ -126,6 +129,14 @@ export const BookShelf: React.FC<BookShelfProps> = ({
             >
               <Award className="w-4 h-4 text-yellow-200" />
               <span>My Passport &amp; Badges</span>
+            </button>
+            <button
+              id="hero-import-book-btn"
+              onClick={onOpenImportBook}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-amber-900/20 backdrop-blur-sm text-white font-bold text-sm hover:bg-amber-900/30 transition-all border border-white/30"
+            >
+              <UploadCloud className="w-4 h-4 text-yellow-200" />
+              <span>Add Your Own Book</span>
             </button>
           </div>
         </div>
