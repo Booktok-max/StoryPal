@@ -36,6 +36,13 @@
       "when": 1789300000000,
       "tag": "0004_shelf_and_cover_url",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789400000000,
+      "tag": "0005_import_jobs",
+      "breakpoints": true
     }
   ]
 }

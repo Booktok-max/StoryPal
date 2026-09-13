@@ -17,6 +17,9 @@ import { listShelf, addToShelf, updateShelfItem, removeFromShelf } from "./serve
 import authRoutes from "./server/auth/routes.js";
 import childRoutes from "./server/auth/childRoutes.js";
 import { loadSession, requireAuth, requireChildContext } from "./server/auth/middleware.js";
+import multer from "multer";
+import { createImportJob, listImportJobs, getImportJob } from "./server/imports/repository.js";
+import { validateUpload, MAX_UPLOAD_BYTES, type ImportFormat } from "./server/imports/validation.js";
 
 dotenv.config();
 
@@ -645,6 +648,99 @@ async function startServer() {
       console.error("Shelf fetch error:", err);
       return res.status(503).json({ error: err?.message || "Failed to load shelf." });
     }
+  });
+
+  // ── Personal EPUB/PDF Shelf (Sprint D) ──────────────────────────────────────
+  // Private family uploads. Deliberately scoped to req.session.userId (the
+  // parent account), not activeChildId — these are never public and never
+  // shared across families. Memory storage + explicit size limit here so
+  // multer itself rejects oversized bodies before validateUpload() even runs.
+  const importUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES } });
+
+  function formatFromMimeAndName(mimetype: string, filename: string): ImportFormat | null {
+    const lower = filename.toLowerCase();
+    if (mimetype === "application/pdf" || lower.endsWith(".pdf")) return "pdf";
+    if (mimetype === "application/epub+zip" || lower.endsWith(".epub")) return "epub";
+    return null;
+  }
+
+  app.post(
+    "/api/imports",
+    requireAuth,
+    importUpload.single("file"),
+    async (req: Request, res: Response): Promise<any> => {
+      try {
+        const file = req.file;
+        if (!file) {
+          return res.status(400).json({ error: { code: "NO_FILE", message: "No file was uploaded." } });
+        }
+
+        const format = formatFromMimeAndName(file.mimetype, file.originalname);
+        if (!format) {
+          return res
+            .status(415)
+            .json({ error: { code: "UNSUPPORTED_FORMAT", message: "Only .epub and .pdf files are supported." } });
+        }
+
+        const validation = validateUpload(file.buffer, format, file.size);
+        if (!validation.ok) {
+          return res.status(422).json({ error: { code: "INVALID_FILE", message: validation.error } });
+        }
+
+        // Sprint D scaffolding: job is recorded as queued here; the actual
+        // parse/import pipeline (text extraction, safety review, promotion
+        // to a `books` row) is a separate, not-yet-built worker step. This
+        // endpoint's job is upload + validation only.
+        const job = await createImportJob({
+          userId: req.session!.userId,
+          filename: file.originalname,
+          format,
+        });
+
+        return res.status(201).json({ job });
+      } catch (err: any) {
+        console.error("Import upload error:", err);
+        return res.status(503).json({ error: err?.message || "Failed to process upload." });
+      }
+    }
+  );
+
+  app.get("/api/imports", requireAuth, async (req: Request, res: Response): Promise<any> => {
+    try {
+      const jobs = await listImportJobs(req.session!.userId);
+      return res.json({ jobs });
+    } catch (err: any) {
+      console.error("Import list error:", err);
+      return res.status(503).json({ error: err?.message || "Failed to load imports." });
+    }
+  });
+
+  app.get("/api/imports/:id", requireAuth, async (req: Request, res: Response): Promise<any> => {
+    try {
+      const job = await getImportJob(req.session!.userId, req.params.id);
+      if (!job) {
+        return res.status(404).json({ error: { code: "NOT_FOUND", message: "Import job not found." } });
+      }
+      return res.json({ job });
+    } catch (err: any) {
+      console.error("Import fetch error:", err);
+      return res.status(503).json({ error: err?.message || "Failed to load import job." });
+    }
+  });
+
+  // multer surfaces size-limit and multipart-parsing failures as errors
+  // passed to next(), which would otherwise fall through to Express's
+  // default plain-text/HTML error page instead of the JSON shape every
+  // other endpoint here returns.
+  app.use("/api/imports", (err: any, _req: Request, res: Response, next: NextFunction) => {
+    if (err instanceof multer.MulterError) {
+      const message =
+        err.code === "LIMIT_FILE_SIZE"
+          ? `File exceeds the ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB upload limit.`
+          : err.message;
+      return res.status(413).json({ error: { code: err.code, message } });
+    }
+    return next(err);
   });
 
   app.post("/api/shelf", requireAuth, requireChildContext, async (req: Request, res: Response): Promise<any> => {

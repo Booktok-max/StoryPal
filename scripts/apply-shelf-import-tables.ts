@@ -1,4 +1,10 @@
 /**
+ * SUPERSEDED — shelf_items now ships in db/migrations/0004_shelf_and_cover_url.sql
+ * and import_jobs in db/migrations/0005_import_jobs.sql, both tracked by
+ * `npx drizzle-kit migrate`. Keep this file only for historical reference;
+ * do not run it going forward, since it creates these tables outside
+ * Drizzle's migration tracking.
+ *
  * One-off: apply ONLY the shelf_items / import_jobs tables reviewed in
  * db/migrations/0003_sweet_slyde.sql — deliberately skipping the rest of
  * that file's drift-cleanup statements, which touch unrelated existing
