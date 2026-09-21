@@ -39,12 +39,37 @@
 // pdfjs-dist legacy build works in Node without a web worker or canvas.
 // The non-legacy build requires a DOM environment.
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import { createRequire } from "node:module";
+
+// pdfjs needs a worker script path even in Node's "fake worker" (same-
+// thread) mode — an empty string is falsy and still trips the "No
+// GlobalWorkerOptions.workerSrc specified" error internally, so it must
+// point at a real file, not just be non-undefined.
+//
+// This has to work in three different module contexts this file actually
+// runs under, and they disagree about what's available:
+//   - `npm run dev` (tsx, real ESM): bare `require` doesn't exist;
+//     createRequire(import.meta.url) is the correct way to get one.
+//   - `npm run build`'s esbuild CJS bundle (production): bare `require`
+//     DOES exist and works — but import.meta.url does NOT (esbuild leaves
+//     it empty for cjs output, and createRequire(undefined) throws).
+//   - vitest: behaves like the ESM case.
+// So: prefer the bare `require` esbuild actually provides in the CJS
+// bundle, and only fall back to createRequire(import.meta.url) when it's
+// genuinely absent (real ESM). `typeof require` is always safe here — it
+// never throws even when `require` is undeclared, in either module system.
+function resolvePdfWorkerSrc(): string {
+  if (typeof require !== "undefined") {
+    return require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
+  }
+  return createRequire(import.meta.url).resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
+}
 
 // Suppress the "Indexing all PDF objects" warning that pdfjs emits on
 // PDFs without a cross-reference table — it's informational, not an error.
 // @ts-ignore — GlobalWorkerOptions exists at runtime but types may lag
 if (pdfjsLib.GlobalWorkerOptions) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+  pdfjsLib.GlobalWorkerOptions.workerSrc = resolvePdfWorkerSrc();
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -281,7 +306,9 @@ export async function extractPdf(buffer: Buffer): Promise<PdfExtractResult> {
     const loadingTask = pdfjsLib.getDocument({
       data,
       useWorkerFetch: false,    // Node — no fetch API
-      isEvalSupported: false,   // security: no eval()
+      // isEvalSupported: false intentionally omitted — removed from
+      // pdfjs-dist's DocumentInitParameters in v6 (the type-3-font eval
+      // path it guarded no longer exists as an option here).
       useSystemFonts: true,     // avoid canvas dependency for font metrics
       verbosity: 0,             // suppress pdfjs console warnings
     });
