@@ -20,6 +20,7 @@ export const books = pgTable("books", {
   status: bookStatusEnum("status").notNull().default("approved"),
   aiEnhanced: boolean("ai_enhanced").default(false),
   coverAssetId: uuid("cover_asset_id"),
+  coverUrl: varchar("cover_url", { length: 2000 }),
   colorTheme: varchar("color_theme", { length: 50 }).default("amber"),
   // Sprint C.A (0004): direct cover URL for DB-backed books, separate from
   // coverAssetId (an internal generated-asset reference). Lets

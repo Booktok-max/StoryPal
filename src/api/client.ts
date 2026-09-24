@@ -243,6 +243,47 @@ export async function createChildProfile(params: {
   return authFetch("/api/children", { method: "POST", body: JSON.stringify(params) });
 }
 
+export interface ShelfItem {
+  id: string;
+  childId: string;
+  bookId: string;
+  status: "want-to-read" | "reading" | "finished";
+  favorite: boolean;
+  progressPage: number;
+  addedAt: string;
+  lastOpenedAt: string | null;
+}
+
+/** Load the signed-in child's durable shelf. */
+export async function fetchShelf(): Promise<{ items: ShelfItem[] }> {
+  return authFetch("/api/shelf");
+}
+
+/** Add a book to the signed-in child's shelf (idempotent). */
+export async function addToShelf(params: {
+  bookId: string;
+  status?: ShelfItem["status"];
+  favorite?: boolean;
+}): Promise<{ item: ShelfItem }> {
+  return authFetch("/api/shelf", { method: "POST", body: JSON.stringify(params) });
+}
+
+/** Update shelf state for one book. */
+export async function updateShelfItem(
+  bookId: string,
+  updates: Partial<Pick<ShelfItem, "status" | "favorite" | "progressPage">>,
+): Promise<{ item: ShelfItem }> {
+  return authFetch(`/api/shelf/${encodeURIComponent(bookId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  });
+}
+
+/** Remove a book from the signed-in child's shelf. */
+export async function removeFromShelf(bookId: string): Promise<{ ok: true }> {
+  return authFetch(`/api/shelf/${encodeURIComponent(bookId)}`, { method: "DELETE" });
+}
+
 // ── Progress persistence ────────────────────────────────────────────────────
 // Session-scoped as of Sprint C: the server reads the active child from
 // req.session.activeChildId (set via switchActiveChild above), so these

@@ -8,6 +8,7 @@ import { databaseProvider } from "./providers/database";
 import { BookRepository } from "./repository";
 
 export const bookRepository = new BookRepository([
+  ...(process.env.DATABASE_URL ? [databaseProvider] : []),
   builtinProvider,
   publicDomainProvider,
   // Registered here for the first time (Sprint C.B) — this file existed,
@@ -31,4 +32,3 @@ export const bookRepository = new BookRepository([
 export { nytimesProviderInfo };
 export { listBestsellers, NYT_LIST_NAMES, NYT_ATTRIBUTION } from "./providers/nytimes";
 export type { NytListSlug } from "./providers/nytimes";
-
