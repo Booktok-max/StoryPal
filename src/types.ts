@@ -63,6 +63,8 @@ export interface Book {
   estimatedMinutes?: number;
   status?: BookStatus;
   aiEnhanced?: boolean;
+  /** ISBN-13 or ISBN-10 if known — used for cross-provider deduplication. */
+  isbn?: string;
 }
 
 export interface DailyReadingActivity {
@@ -98,6 +100,40 @@ export interface UserProgress {
   }>;
   dailyActivity?: DailyReadingActivity[];
   dailyGoalPages?: number;
+}
+
+export type ShelfStatus = "want-to-read" | "reading" | "finished";
+
+export interface ShelfItem {
+  id: string;
+  bookId: string;
+  status: ShelfStatus;
+  favorite: boolean;
+  progressPage: number;
+  addedAt: string;
+  lastOpenedAt: string | null;
+}
+
+export type ImportJobFormat = "text" | "epub" | "pdf";
+export type ImportJobStatus =
+  | "queued"
+  | "processing"
+  | "pending-review"
+  | "approved"
+  | "rejected"
+  | "failed";
+
+export interface ImportJob {
+  id: string;
+  userId: string | null;
+  bookId: string | null;
+  filename: string | null;
+  format: ImportJobFormat;
+  status: ImportJobStatus;
+  progress: number;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Badge {

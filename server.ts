@@ -13,10 +13,14 @@ import { importTextBook } from "./server/books/importer";
 import { isDbHealthy } from "./db/client.js";
 import { discoverImportOpenLibraryWork, DiscoveryImportError } from "./server/books/openLibraryImport";
 import { getProgress, recordPageRead, unlockBadge as unlockBadgeInDb } from "./server/progress/repository.js";
+import { listShelf, addToShelf, updateShelfItem, removeFromShelf } from "./server/shelf/repository.js";
 import authRoutes from "./server/auth/routes.js";
 import childRoutes from "./server/auth/childRoutes.js";
 import shelfRoutes from "./server/shelf/routes.js";
 import { loadSession, requireAuth, requireChildContext } from "./server/auth/middleware.js";
+import multer from "multer";
+import { createImportJob, listImportJobs, getImportJob } from "./server/imports/repository.js";
+import { validateUpload, MAX_UPLOAD_BYTES, type ImportFormat } from "./server/imports/validation.js";
 
 dotenv.config();
 
@@ -639,6 +643,172 @@ async function startServer() {
     } catch (err: any) {
       console.error("Badge persistence error:", err);
       return res.status(503).json({ error: err?.message || "Failed to save badge." });
+    }
+  });
+
+  // ── Shelf (Sprint C.A) ───────────────────────────────────────────────────────
+  // Same session-scoped pattern as progress above: active child comes from
+  // req.session.activeChildId, never a client-supplied id.
+  app.get("/api/shelf", requireAuth, requireChildContext, async (req: Request, res: Response): Promise<any> => {
+    try {
+      const items = await listShelf(req.session!.activeChildId!);
+      return res.json({ items });
+    } catch (err: any) {
+      console.error("Shelf fetch error:", err);
+      return res.status(503).json({ error: err?.message || "Failed to load shelf." });
+    }
+  });
+
+  // ── Personal EPUB/PDF Shelf (Sprint D) ──────────────────────────────────────
+  // Private family uploads. Deliberately scoped to req.session.userId (the
+  // parent account), not activeChildId — these are never public and never
+  // shared across families. Memory storage + explicit size limit here so
+  // multer itself rejects oversized bodies before validateUpload() even runs.
+  const importUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES } });
+
+  function formatFromMimeAndName(mimetype: string, filename: string): ImportFormat | null {
+    const lower = filename.toLowerCase();
+    if (mimetype === "application/pdf" || lower.endsWith(".pdf")) return "pdf";
+    if (mimetype === "application/epub+zip" || lower.endsWith(".epub")) return "epub";
+    return null;
+  }
+
+  app.post(
+    "/api/imports",
+    requireAuth,
+    importUpload.single("file"),
+    async (req: Request, res: Response): Promise<any> => {
+      try {
+        const file = req.file;
+        if (!file) {
+          return res.status(400).json({ error: { code: "NO_FILE", message: "No file was uploaded." } });
+        }
+
+        const format = formatFromMimeAndName(file.mimetype, file.originalname);
+        if (!format) {
+          return res
+            .status(415)
+            .json({ error: { code: "UNSUPPORTED_FORMAT", message: "Only .epub and .pdf files are supported." } });
+        }
+
+        const validation = validateUpload(file.buffer, format, file.size);
+        if (!validation.ok) {
+          return res.status(422).json({ error: { code: "INVALID_FILE", message: validation.error } });
+        }
+
+        // Sprint D scaffolding: job is recorded as queued here; the actual
+        // parse/import pipeline (text extraction, safety review, promotion
+        // to a `books` row) is a separate, not-yet-built worker step. This
+        // endpoint's job is upload + validation only.
+        const job = await createImportJob({
+          userId: req.session!.userId,
+          filename: file.originalname,
+          format,
+        });
+
+        return res.status(201).json({ job });
+      } catch (err: any) {
+        console.error("Import upload error:", err);
+        return res.status(503).json({ error: err?.message || "Failed to process upload." });
+      }
+    }
+  );
+
+  app.get("/api/imports", requireAuth, async (req: Request, res: Response): Promise<any> => {
+    try {
+      const jobs = await listImportJobs(req.session!.userId);
+      return res.json({ jobs });
+    } catch (err: any) {
+      console.error("Import list error:", err);
+      return res.status(503).json({ error: err?.message || "Failed to load imports." });
+    }
+  });
+
+  app.get("/api/imports/:id", requireAuth, async (req: Request, res: Response): Promise<any> => {
+    try {
+      const job = await getImportJob(req.session!.userId, req.params.id);
+      if (!job) {
+        return res.status(404).json({ error: { code: "NOT_FOUND", message: "Import job not found." } });
+      }
+      return res.json({ job });
+    } catch (err: any) {
+      console.error("Import fetch error:", err);
+      return res.status(503).json({ error: err?.message || "Failed to load import job." });
+    }
+  });
+
+  // multer surfaces size-limit and multipart-parsing failures as errors
+  // passed to next(), which would otherwise fall through to Express's
+  // default plain-text/HTML error page instead of the JSON shape every
+  // other endpoint here returns.
+  app.use("/api/imports", (err: any, _req: Request, res: Response, next: NextFunction) => {
+    if (err instanceof multer.MulterError) {
+      const message =
+        err.code === "LIMIT_FILE_SIZE"
+          ? `File exceeds the ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB upload limit.`
+          : err.message;
+      return res.status(413).json({ error: { code: err.code, message } });
+    }
+    return next(err);
+  });
+
+  app.post("/api/shelf", requireAuth, requireChildContext, async (req: Request, res: Response): Promise<any> => {
+    try {
+      const { bookId } = req.body;
+      if (typeof bookId !== "string" || !bookId) {
+        return res.status(400).json({ error: "bookId is required." });
+      }
+      const result = await addToShelf(req.session!.activeChildId!, bookId);
+      if (!result.ok) {
+        return res.status(409).json({ error: { code: result.error, message: "That book is already on the shelf." } });
+      }
+      return res.status(201).json({ item: result.item });
+    } catch (err: any) {
+      console.error("Shelf add error:", err);
+      return res.status(503).json({ error: err?.message || "Failed to add to shelf." });
+    }
+  });
+
+  app.patch("/api/shelf/:bookId", requireAuth, requireChildContext, async (req: Request, res: Response): Promise<any> => {
+    try {
+      const { bookId } = req.params;
+      const { status, favorite, progressPage } = req.body;
+
+      if (status !== undefined && !["want-to-read", "reading", "finished"].includes(status)) {
+        return res.status(400).json({ error: "Invalid status." });
+      }
+      if (favorite !== undefined && typeof favorite !== "boolean") {
+        return res.status(400).json({ error: "favorite must be a boolean." });
+      }
+      if (progressPage !== undefined && (typeof progressPage !== "number" || progressPage < 0)) {
+        return res.status(400).json({ error: "progressPage must be a non-negative number." });
+      }
+
+      const updated = await updateShelfItem(req.session!.activeChildId!, decodeURIComponent(bookId), {
+        status,
+        favorite,
+        progressPage,
+      });
+      if (!updated) {
+        return res.status(404).json({ error: { code: "NOT_ON_SHELF", message: "That book isn't on this child's shelf." } });
+      }
+      return res.json({ item: updated });
+    } catch (err: any) {
+      console.error("Shelf update error:", err);
+      return res.status(503).json({ error: err?.message || "Failed to update shelf item." });
+    }
+  });
+
+  app.delete("/api/shelf/:bookId", requireAuth, requireChildContext, async (req: Request, res: Response): Promise<any> => {
+    try {
+      const removed = await removeFromShelf(req.session!.activeChildId!, decodeURIComponent(req.params.bookId));
+      if (!removed) {
+        return res.status(404).json({ error: { code: "NOT_ON_SHELF", message: "That book isn't on this child's shelf." } });
+      }
+      return res.json({ removed: true });
+    } catch (err: any) {
+      console.error("Shelf remove error:", err);
+      return res.status(503).json({ error: err?.message || "Failed to remove from shelf." });
     }
   });
 

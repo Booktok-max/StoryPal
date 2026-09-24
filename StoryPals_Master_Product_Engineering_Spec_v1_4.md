@@ -379,6 +379,37 @@ What changed: /api/books/search?source=openlibrary now over-fetches
   sort=rating added to Open Library queries to bias toward well-known
   editions.
 
+Sprint C.B Status (object storage + illustrations slice)
+Status: Implemented locally; not yet deployed. Fails soft — if STORAGE_*
+  env vars are unset, updatePageImage() logs a warning and returns the
+  book unchanged, same behavior as the no-op it replaces, so this cannot
+  break existing behavior before storage is actually configured.
+Date: 12 September 2026
+Commit: (pending — not yet pushed)
+What changed: server/storage/objectStorage.ts (new — S3-compatible client,
+  @aws-sdk/client-s3 added as a dependency); server/books/illustrations/repository.ts
+  (new — saveIllustration()/loadPrimaryIllustrations(), assets + book_page_assets
+  bookkeeping); providers/database.ts's updatePageImage() now actually
+  persists instead of warn-only no-op, and loadBook() reads illustrations
+  back; databaseProvider registered in catalog.ts for the first time (was
+  fully implemented but unreachable — see finding above); .env.example
+  documents STORAGE_ENDPOINT/REGION/BUCKET/ACCESS_KEY_ID/SECRET_ACCESS_KEY/PUBLIC_URL.
+Tests: test/objectStorage.test.ts (6 tests — data-URL validation, env-var
+  gating, public URL construction; no live S3 calls). npx tsc --noEmit,
+  vite build, and the esbuild server bundle all pass with no new errors.
+Known limitations: STORAGE_* not yet set anywhere (external manual step);
+  only illustrations use object storage so far, not uploaded EPUB/PDF
+  files (Sprint D) or the book covers cached in migration 0004's
+  book_cover_cache table (that stays a small Postgres table, not object
+  storage — covers are small and already come from an external URL, so
+  there's nothing to upload); no backup/recovery process for the bucket
+  itself yet.
+Next step: get a Cloudflare R2 (or Railway object storage) bucket + keys,
+  set the five STORAGE_* vars in Railway, redeploy, generate a test
+  illustration, restart the dev server or redeploy again, and confirm the
+  illustration is still there — that's the actual proof this works, since
+  "no error" alone doesn't confirm persistence.
+
 7. Personal EPUB/PDF Shelf — Required Capability (Sprint D)
 Private family uploads of EPUB and PDF books. Critical: uploads must
 never automatically become public. Planned for Sprint D.
@@ -648,10 +679,86 @@ Phase C-B (full storage architecture; remains on the horizon)
 [ ] Book cover caching tiers 1-5 from Section 6.1
 [ ] Image storage for story illustrations (not book covers)
 [ ] Uploaded files storage
+Sprint C.A: Shelf Schema + Cover Caching — COMPLETE (not yet deployed)
+[x] db/schema/index.ts export bug fixed (shelf.ts and imports.ts were
+    written but never exported — silently missing from every
+    drizzle-kit command)
+[x] shelf_items table (want-to-read / reading / finished, favorite,
+    progress_page) + shelf_status enum, migration 0004
+[x] books.cover_url column — also closes a pre-existing gap:
+    providers/database.ts's loadBook() always returned coverImage: ""
+[x] book_cover_cache table — NOT books.cover_url as originally
+    sketched; books.id is a uuid unrelated to external catalog ids
+    like "openlibrary:OL123W", so there was nothing to upsert against
+    there for non-DB-backed books. Small dedicated table keyed on the
+    provider's own book id string instead.
+[x] BookRepository caches external providers' covers on list()/getById()
+    (fire-and-forget write; read-fallback only when a provider call
+    comes back with no cover)
+[x] GET/POST /api/shelf, PATCH/DELETE /api/shelf/:bookId — session-scoped
+    via requireAuth + requireChildContext, same pattern as /api/progress
+[!] CRITICAL FINDING: db/migrations/meta/_journal.json was missing the
+    entry for 0003_email_verification.sql. drizzle-kit migrate reads
+    only the journal, not the migrations folder, to decide what to run
+    — so Sprint B.1's migration almost certainly never actually applied
+    to production despite the "migration ran successfully" output you
+    saw (the NOTICEs were just 0000-0002 being re-skipped as already
+    applied). Fixed by adding the missing 0003 entry alongside the new
+    0004 entry. Re-running `npx drizzle-kit migrate` will apply both
+    for the first time. email_verified_at / email_verification_tokens
+    should be verified in production after this deploy.
+[!] Also found: a stray db/migrations/meta/0003_snapshot.json already
+    existed, describing shelf_items/import_jobs but NOT
+    email_verification_tokens — inconsistent with both 0003's actual
+    content and current schema files. Left as-is (repairing it needs a
+    live `drizzle-kit generate` against the real DB, which can't be
+    done from this environment) — recommend running `drizzle-kit
+    generate` once after this deploys, to resync snapshots and avoid
+    surprises on the next schema change.
+[ ] scripts/apply-shelf-import-tables.ts's relationship to migration
+    0004 unresolved — if that script was ever run by hand against
+    production, migration 0004 is written defensively (IF NOT EXISTS /
+    DO-block guards throughout) to no-op safely either way, but this
+    wasn't verified against the actual production DB state.
+
+Sprint C.B: Durable Storage — IN PROGRESS (object storage + illustrations
+  done, not yet deployed; full catalog migration/backups still open)
+[x] Object storage client (server/storage/objectStorage.ts) — S3-compatible,
+    works against Cloudflare R2 or Railway object storage without a
+    provider-specific branch, just different env vars
+[x] Image storage for story illustrations — PATCH /api/books/:id/illustration
+    now actually persists (upload to bucket, record in assets +
+    book_page_assets) instead of the old no-op-with-warning
+[x] Illustrations survive a restart and are readable back: loadBook() now
+    joins in each page's current (isPrimary) illustration
+[!] CRITICAL FINDING: server/books/providers/database.ts (the DB-backed
+    provider — search, getBook, updatePageImage, updateBookLevel,
+    updateBookStatus, all fully implemented) was never registered in
+    server/books/catalog.ts's provider list. It was completely
+    unreachable — not in search results, and updatePageImage() could
+    never find a book through it. Fixed by adding it to the array
+    (after publicDomainProvider, so JSON-backed entries keep winning
+    any title+author dedupe collision with an unverified DB copy).
+[ ] PostgreSQL as source of truth for ALL book content — the database
+    provider is now reachable, but scripts/migrate-catalog-to-db.ts
+    (which copies the JSON catalog into it) hasn't been confirmed run
+    against production; Open Library/Standard Ebooks/Google Books/NYT
+    remain live-fetched regardless (that's inherent to those sources,
+    not a migration gap)
+[ ] Uploaded files storage (EPUB/PDF) — the object storage client this
+    sprint built is reusable for Sprint D's file uploads, but no upload
+    endpoint exists yet; deferred to Sprint D itself
 [ ] Backups
 [ ] Recovery test
+[ ] STORAGE_* env vars not yet obtained/set (external manual step —
+    Cloudflare R2 account + bucket, or Railway's object storage add-on)
 
-Sprint D: EPUB/PDF Shelf — after Sprint C
+Sprint D: EPUB/PDF Shelf — after Sprint C.B
+[ ] import_jobs table has no migration yet — db/schema/imports.ts is now
+    exported (C.A export-bug fix covered it too) but nothing has created
+    the table in Postgres. Deferred here since import_jobs is EPUB/PDF-
+    upload-specific, not shelf-specific — picking it up when Sprint D
+    starts rather than folding it into 0004.
 [ ] EPUB upload endpoint
 [ ] PDF upload endpoint
 [ ] Security validation (magic bytes, size, archive bomb check)

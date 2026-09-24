@@ -156,6 +156,7 @@ function toBook(vol: GoogleVolume): Book | null {
     estimatedMinutes: info.pageCount ? Math.max(1, Math.round(info.pageCount * 1.5)) : undefined,
     status: "approved",
     aiEnhanced: false,
+    isbn: getIsbn(vol),
   };
 }
 

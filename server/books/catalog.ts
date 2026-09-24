@@ -11,6 +11,15 @@ export const bookRepository = new BookRepository([
   ...(process.env.DATABASE_URL ? [databaseProvider] : []),
   builtinProvider,
   publicDomainProvider,
+  // Registered here for the first time (Sprint C.B) — this file existed,
+  // fully implemented, but was never added to this array, so none of it
+  // was reachable: not in search results, and updatePageImage() could
+  // never find a book to attach a persisted illustration to. Placed after
+  // publicDomainProvider so JSON-backed entries keep winning
+  // dedupeBooks()'s title+author precedence if scripts/migrate-catalog-to-db.ts
+  // has copied the same books into Postgres — safer during the transition
+  // than letting an unverified DB copy silently shadow the known-good JSON one.
+  databaseProvider,
   openLibraryProvider,
   standardEbooksProvider,
   googleBooksProvider,
