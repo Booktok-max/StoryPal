@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  listShelf,
-  addToShelf,
+  fetchShelf,
+addToShelf,
   updateShelfItem,
   removeFromShelf,
   type ShelfUpdateInput,
@@ -24,7 +24,7 @@ export function useShelf(active: boolean) {
     if (!active) return;
     setLoading(true);
     try {
-      const data = await listShelf();
+      const data = await fetchShelf();
       setItems(data.items ?? []);
     } catch {
       // DB unavailable or not yet configured — degrade gracefully
