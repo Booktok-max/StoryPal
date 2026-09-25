@@ -1,4 +1,4 @@
-import { eq, asc, ilike, and, or } from "drizzle-orm";
+import { eq, asc, ilike, and, or, isNull } from "drizzle-orm";
 import { getDb } from "../../../db/client";
 import { books, bookPages } from "../../../db/schema/books";
 import { bookSources } from "../../../db/schema/providers";
@@ -48,7 +48,6 @@ async function loadBook(row: typeof books.$inferSelect): Promise<Book> {
     id: row.id,
     title: row.title,
     author: row.author,
-    coverImage: row.coverUrl ?? "",
     coverImage: row.coverUrl ?? "", // falls back to withGuaranteedCover() in server.ts if still empty
     level: row.level ? LEVEL_DISPLAY[row.level] : "Level 1 (Early Reader)",
     levelShort: (row.level as Book["levelShort"]) ?? "Level 1",
@@ -98,7 +97,9 @@ export const databaseProvider: BookProvider = {
 
   async search(query: BookSearchQuery): Promise<BookSearchResult[]> {
     const db = getDb();
-    const conditions = [eq(books.status, "approved")];
+    // Parent-owned uploads are intentionally excluded from all public catalog
+    // paths. They are retrieved only by the session-scoped import route.
+    const conditions = [eq(books.status, "approved"), isNull(books.ownerUserId)];
 
     if (query.q?.trim()) {
       const q = `%${query.q.trim()}%`;
@@ -120,7 +121,11 @@ export const databaseProvider: BookProvider = {
 
   async getBook(externalId: string): Promise<Book | null> {
     const db = getDb();
-    const [row] = await db.select().from(books).where(eq(books.id, externalId)).limit(1);
+    const [row] = await db
+      .select()
+      .from(books)
+      .where(and(eq(books.id, externalId), isNull(books.ownerUserId)))
+      .limit(1);
     if (!row) return null;
     return loadBook(row);
   },
