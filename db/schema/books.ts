@@ -1,4 +1,5 @@
 import { pgTable, uuid, varchar, text, integer, boolean, timestamp, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
+import { users } from "./users";
 
 export const bookLevelEnum = pgEnum("book_level", ["Level 1", "Level 2", "Level 3"]);
 export const bookCategoryEnum = pgEnum("book_category", ["fable", "classic", "adventure", "custom"]);
@@ -20,13 +21,15 @@ export const books = pgTable("books", {
   status: bookStatusEnum("status").notNull().default("approved"),
   aiEnhanced: boolean("ai_enhanced").default(false),
   coverAssetId: uuid("cover_asset_id"),
-  coverUrl: varchar("cover_url", { length: 2000 }),
   colorTheme: varchar("color_theme", { length: 50 }).default("amber"),
   // Sprint C.A (0004): direct cover URL for DB-backed books, separate from
   // coverAssetId (an internal generated-asset reference). Lets
   // providers/database.ts serve a cover without going through the asset
   // pipeline.
   coverUrl: varchar("cover_url", { length: 1000 }),
+  // Null for shared catalog books. A non-null owner makes the row private
+  // to one parent account and must never be exposed through public providers.
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  listShelf,
-  addToShelf,
-  patchShelfItem,
-  deleteFromShelf,
+  fetchShelf,
+addToShelf,
+  updateShelfItem,
+  removeFromShelf,
   type ShelfUpdateInput,
 } from "../api/client";
 import type { ShelfItem, ShelfStatus } from "../types";
@@ -24,7 +24,7 @@ export function useShelf(active: boolean) {
     if (!active) return;
     setLoading(true);
     try {
-      const data = await listShelf();
+      const data = await fetchShelf();
       setItems(data.items ?? []);
     } catch {
       // DB unavailable or not yet configured — degrade gracefully
@@ -61,7 +61,7 @@ export function useShelf(active: boolean) {
       setItems((prev) => [...prev, optimistic]);
 
       try {
-        const { item } = await addToShelf(bookId);
+        const { item } = await addToShelf({ bookId });
         setItems((prev) => prev.map((i) => (i.bookId === bookId ? item : i)));
       } catch {
         setItems((prev) => prev.filter((i) => i.bookId !== bookId));
@@ -76,7 +76,7 @@ export function useShelf(active: boolean) {
       const snapshot = items;
       setItems((prev) => prev.filter((i) => i.bookId !== bookId));
       try {
-        await deleteFromShelf(bookId);
+        await removeFromShelf(bookId);
       } catch {
         setItems(snapshot);
       }
@@ -103,7 +103,7 @@ export function useShelf(active: boolean) {
         prev.map((i) => (i.bookId === bookId ? { ...i, ...input } : i))
       );
       try {
-        await patchShelfItem(bookId, input);
+        await updateShelfItem(bookId, input);
       } catch {
         // Reload to restore server truth
         reload();
@@ -136,8 +136,8 @@ export function useShelf(active: boolean) {
         };
         setItems((prev) => [...prev, optimistic]);
         try {
-          await addToShelf(bookId);
-          await patchShelfItem(bookId, { status: "reading" });
+          await addToShelf({ bookId });
+          await updateShelfItem(bookId, { status: "reading" });
           reload(); // Sync with server's real IDs
         } catch {
           setItems((prev) => prev.filter((i) => i.bookId !== bookId));
@@ -170,8 +170,8 @@ export function useShelf(active: boolean) {
         };
         setItems((prev) => [...prev, optimistic]);
         try {
-          await addToShelf(bookId);
-          await patchShelfItem(bookId, { status: "finished" });
+          await addToShelf({ bookId });
+          await updateShelfItem(bookId, { status: "finished" });
           reload();
         } catch {
           setItems((prev) => prev.filter((i) => i.bookId !== bookId));

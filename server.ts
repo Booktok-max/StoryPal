@@ -16,7 +16,6 @@ import { getProgress, recordPageRead, unlockBadge as unlockBadgeInDb } from "./s
 import { listShelf, addToShelf, updateShelfItem, removeFromShelf } from "./server/shelf/repository.js";
 import authRoutes from "./server/auth/routes.js";
 import childRoutes from "./server/auth/childRoutes.js";
-import shelfRoutes from "./server/shelf/routes.js";
 import { loadSession, requireAuth, requireChildContext } from "./server/auth/middleware.js";
 import multer from "multer";
 import { createImportJob, listImportJobs, getImportJob } from "./server/imports/repository.js";
@@ -135,7 +134,6 @@ async function startServer() {
   app.use(loadSession); // makes req.session available on every request
   app.use("/api/auth", authRoutes);
   app.use("/api/children", childRoutes);
-  app.use("/api/shelf", shelfRoutes);
 
   const aiRateLimiter = rateLimit({
     windowMs: 60 * 1000,
